@@ -110,3 +110,4 @@ export function calcMetrics(rows: SalesRow[]) {
 export function fmt$(n: number) {
   return '$' + Math.round(n).toLocaleString('en-US')
 }
+
