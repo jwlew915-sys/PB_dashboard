@@ -89,12 +89,19 @@ function KpiCard({ label, value, sub, trend, highlight }: KpiProps) {
         fontSize: '34px', lineHeight: 1, letterSpacing: '-0.01em',
         color: highlight ? '#fff' : 'var(--navy)',
       }}>{value}</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {highlight
-          ? <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>
-              {trend !== null ? `${trend >= 0 ? '+' : ''}${trend.toFixed(1)}% ` : ''}{sub}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {trend !== null
+          ? <span style={{
+              fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: 700,
+              color: highlight
+                ? (trend >= 0 ? '#6EE7A8' : '#FF8A8A')
+                : (trend >= 0 ? '#1E7A48' : '#C0392B'),
+            }}>
+              {trend >= 0 ? '▲' : '▼'} {sub}
             </span>
-          : <><Trend pct={trend} /><span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{sub}</span></>
+          : <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: highlight ? 'rgba(255,255,255,0.45)' : 'var(--text-muted)' }}>
+              {sub}
+            </span>
         }
       </div>
     </div>
