@@ -300,9 +300,14 @@ export default function Dashboard() {
 
   type KpiConfig = { label: string; value: string; sub: string; trend: number | null; highlight?: boolean }
 
+  const dailySalesTrend  = trendPct(dailyRow?.['netsales_$'] ?? 0, prevDayRow?.['netsales_$'] ?? 0)
+  const dailyOrderTrend  = trendPct(dailyRow?.order_count   ?? 0, prevDayRow?.order_count   ?? 0)
+  const fmtTrend = (t: number | null) =>
+    t !== null ? `${t >= 0 ? '+' : ''}${t.toFixed(1)}% vs ${sameDayPriorYear}` : `vs ${sameDayPriorYear} (no prior data)`
+
   const kpis: KpiConfig[] = tab === 'daily' ? [
-    { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: `vs ${sameDayPriorYear}`, trend: trendPct(dailyRow?.['netsales_$'] ?? 0, prevDayRow?.['netsales_$'] ?? 0), highlight: true },
-    { label: 'Orders', value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: `vs ${sameDayPriorYear}`, trend: trendPct(dailyRow?.order_count ?? 0, prevDayRow?.order_count ?? 0) },
+    { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: fmtTrend(dailySalesTrend), trend: dailySalesTrend, highlight: true },
+    { label: 'Orders',    value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: fmtTrend(dailyOrderTrend), trend: dailyOrderTrend },
     { label: 'Avg Order', value: dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—', sub: 'per transaction', trend: null },
     { label: 'Waste %', value: dailyMenuRows.length ? calcWaste(dailyMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
   ] : tab === 'weekly' ? [
