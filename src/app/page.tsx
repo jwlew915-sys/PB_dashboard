@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, SalesRow, MenuRow } from '@/lib/supabase'
-import { calcWaste } from '@/lib/data'
+import { calcWaste, groupSalesByDate } from '@/lib/data'
 import MetricCard from '@/components/MetricCard'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -224,7 +224,7 @@ export default function Dashboard() {
         supabase.from('sales').select('*').order('business_date', { ascending: true }),
         supabase.from('menu').select('*').order('business_date', { ascending: true }),
       ])
-      setAllData((salesRes.data as SalesRow[]) || [])
+      setAllData(groupSalesByDate((salesRes.data as SalesRow[]) || []))
       setAllMenu((menuRes.data as MenuRow[])   || [])
       setLoading(false)
     }
@@ -232,18 +232,7 @@ export default function Dashboard() {
   }, [])
 
   // ── DAILY ──
-  // Sum all rows for the date in case there are multiple entries per day
-  const dailyRows     = useMemo(() => allData.filter(r => r.business_date === dailyDate), [allData, dailyDate])
-  const dailyRow      = useMemo(() => {
-    if (!dailyRows.length) return null
-    return {
-      business_date: dailyDate,
-      'netsales_$':  dailyRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0),
-      order_count:   dailyRows.reduce((s, r) => s + (r.order_count   || 0), 0),
-      avg_order:     dailyRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0) /
-                     Math.max(dailyRows.reduce((s, r) => s + (r.order_count || 0), 0), 1),
-    }
-  }, [dailyRows, dailyDate])
+  const dailyRow      = useMemo(() => allData.find(r => r.business_date === dailyDate),  [allData, dailyDate])
   const dailyMenuRows = useMemo(() => allMenu.filter(r => r.business_date === dailyDate), [allMenu, dailyDate])
 
   // ── WEEKLY ──
@@ -278,17 +267,9 @@ export default function Dashboard() {
 
   // ── YoY ──
   const [cmpY, cmpM, cmpD] = cmpDate.split('-')
-  const prevDate  = `${parseInt(cmpY) - 1}-${cmpM}-${cmpD}`
-  const cmpRowA   = useMemo(() => {
-    const rows = allData.filter(r => r.business_date === cmpDate)
-    if (!rows.length) return null
-    return { 'netsales_$': rows.reduce((s, r) => s + (r['netsales_$'] || 0), 0), order_count: rows.reduce((s, r) => s + (r.order_count || 0), 0), avg_order: null }
-  }, [allData, cmpDate])
-  const cmpRowB   = useMemo(() => {
-    const rows = allData.filter(r => r.business_date === prevDate)
-    if (!rows.length) return null
-    return { 'netsales_$': rows.reduce((s, r) => s + (r['netsales_$'] || 0), 0), order_count: rows.reduce((s, r) => s + (r.order_count || 0), 0), avg_order: null }
-  }, [allData, prevDate])
+  const prevDate = `${parseInt(cmpY) - 1}-${cmpM}-${cmpD}`
+  const cmpRowA  = useMemo(() => allData.find(r => r.business_date === cmpDate),  [allData, cmpDate])
+  const cmpRowB  = useMemo(() => allData.find(r => r.business_date === prevDate), [allData, prevDate])
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'daily',   label: 'Daily'   },
@@ -415,7 +396,7 @@ export default function Dashboard() {
               <MetricCard label="Avg Order"   value={dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—'} />
               <MetricCard label="Date"        value={dailyDate.slice(5).replace('-', '/')} />
             </div>
-            {!dailyRows.length && (
+            {!dailyRow && (
               <div style={{
                 marginTop: 20,
                 background: 'rgba(208,178,131,0.15)',

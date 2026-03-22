@@ -58,6 +58,28 @@ export function fmt$(n: number) {
   return '$' + Math.round(n).toLocaleString('en-US')
 }
 
+/**
+ * Collapses multiple rows for the same business_date into one aggregated row.
+ * Necessary because the sales table may have multiple entries per day.
+ */
+export function groupSalesByDate(rows: SalesRow[]): SalesRow[] {
+  const map: Record<string, { net: number; orders: number; id: number }> = {}
+  rows.forEach(r => {
+    if (!map[r.business_date]) map[r.business_date] = { net: 0, orders: 0, id: r.id }
+    map[r.business_date].net    += r['netsales_$'] || 0
+    map[r.business_date].orders += r.order_count   || 0
+  })
+  return Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, agg]) => ({
+      id:             agg.id,
+      business_date:  date,
+      'netsales_$':   agg.net,
+      order_count:    agg.orders,
+      avg_order:      agg.orders > 0 ? agg.net / agg.orders : null,
+    }))
+}
+
 export async function fetchWasteRange(from: string, to: string): Promise<MenuRow[]> {
   const { data, error } = await supabase
     .from('menu')
