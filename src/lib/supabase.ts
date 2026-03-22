@@ -16,13 +16,22 @@ export type SalesRow = {
 export type MenuRow = {
   id: number
   business_date: string
-  mi_master_id: string
-  mi_name: string
-  quantity: number
-  total_retail_value: number
-  waste_reasons: string | null
-  quantity_sold: number
-  total_quantity: number
-  waste_percentage: number
-  total_item_cogs: number
+  item_name: string
+  sales_category: string | null
+  qty_sold: number | null
+  item_cogs: number | null
+  gross_sales: number | null
+  discount_amount: number | null
+  refund_amount: number | null
+  net_sales: number | null
+  cogs: number | null
+  gross_profit: number | null
+  gross_margin_pct: number | null
+  tax: number | null
+  waste_count: number | null
+  waste_amount: number | null
+  voided_gross_sales: number | null
+  voided_qty_sold: number | null
+  item_qty_incl_voids: number | null
+  gross_amount_incl_voids: number | null
 }
