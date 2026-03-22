@@ -3,21 +3,20 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, SalesRow, MenuRow } from '@/lib/supabase'
 import { calcWaste, groupSalesByDate } from '@/lib/data'
-import MetricCard from '@/components/MetricCard'
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 
 type Tab = 'daily' | 'weekly' | 'monthly' | 'ytd' | 'compare'
 
-const fmt = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
+const fmt  = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
 const fmtK = (n: number) => n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : '$' + Math.round(n)
+const norm = (d: string) => String(d).slice(0, 10)
 
 function startOfWeek(date: Date) {
   const d = new Date(date)
-  const day = d.getDay()
-  d.setDate(d.getDate() - ((day + 6) % 7))
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
   return d.toISOString().slice(0, 10)
 }
 function endOfWeek(date: Date) {
@@ -25,122 +24,128 @@ function endOfWeek(date: Date) {
   d.setDate(d.getDate() + 6)
   return d.toISOString().slice(0, 10)
 }
-
-const C = {
-  blue:      '#225CC2',
-  blueMid:   '#3B74D9',
-  navy:      '#17294C',
-  sand:      '#D0B283',
-  sandLight: '#E8D4B0',
-  rosy:      '#D76884',
-  rosyLight: '#F2B8C6',
-  grid:      'rgba(208,178,131,0.2)',
-  tick:      '#9A8A98',
+function shiftDays(dateStr: string, days: number) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
-const axisProps = {
-  tick: { fontSize: 11, fill: C.tick, fontFamily: 'var(--font-body)' },
-  axisLine: false as const,
-  tickLine: false as const,
-}
-
-const sectionLabel: React.CSSProperties = {
-  fontFamily: 'var(--font-body), sans-serif',
-  fontSize: '10px',
-  fontWeight: 700,
-  letterSpacing: '0.1em',
-  textTransform: 'uppercase',
-  color: 'var(--text-label)',
-  marginBottom: '14px',
-}
-
-const card: React.CSSProperties = {
-  background: 'var(--bg-card-alt)',
-  border: '1.5px solid var(--border-soft)',
-  borderRadius: 'var(--radius-card)',
-  boxShadow: 'var(--shadow-card)',
-  padding: '24px',
-}
-
-const inputStyle: React.CSSProperties = {
-  background: 'var(--bg-card-alt)',
-  border: '1.5px solid var(--border)',
-  borderRadius: 10,
-  color: 'var(--navy)',
-  fontFamily: 'var(--font-body), sans-serif',
-  fontSize: '13px',
-  fontWeight: 500,
-  padding: '8px 14px',
-  outline: 'none',
-}
-
-const labelStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-body), sans-serif',
-  fontSize: '12px',
-  fontWeight: 600,
-  letterSpacing: '0.06em',
-  textTransform: 'uppercase',
-  color: 'var(--text-label)',
-}
-
-// ── Waste table component ─────────────────────────────────────────────────────
-type WasteItem = { name: string; qty: number; value: number; cogs: number; pct: number }
-
-function WasteTable({ items }: { items: WasteItem[] }) {
-  if (!items.length) return null
+// ── Trend badge ────────────────────────────────────────────────────────────────
+function Trend({ pct }: { pct: number | null }) {
+  if (pct === null) return null
+  const up = pct >= 0
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      fontFamily: 'var(--font-body), sans-serif',
+      fontSize: '11px', fontWeight: 700,
+      color: up ? '#2E7D52' : '#C0392B',
+      background: up ? 'rgba(46,125,82,0.1)' : 'rgba(192,57,43,0.1)',
+      padding: '2px 8px', borderRadius: 20,
+    }}>
+      {up ? '▲' : '▼'} {up ? '+' : ''}{pct.toFixed(1)}%
+    </span>
+  )
+}
+
+// ── KPI card ──────────────────────────────────────────────────────────────────
+type KpiProps = {
+  label: string; value: string; sub: string; trend: number | null; highlight?: boolean
+}
+function KpiCard({ label, value, sub, trend, highlight }: KpiProps) {
+  return (
+    <div style={{
+      background: highlight ? 'var(--navy)' : 'var(--bg-card-alt)',
+      border: highlight ? 'none' : '1.5px solid var(--border-soft)',
+      borderRadius: 'var(--radius-card)',
+      boxShadow: 'var(--shadow-card)',
+      padding: '22px 24px',
+      display: 'flex', flexDirection: 'column', gap: 10,
+      position: 'relative', overflow: 'hidden',
+    }}>
+      {/* decorative arc */}
+      {highlight && (
+        <div style={{
+          position: 'absolute', top: -30, right: -30,
+          width: 110, height: 110, borderRadius: '50%',
+          border: '20px solid rgba(255,255,255,0.07)',
+          pointerEvents: 'none',
+        }} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <p style={{
+          fontFamily: 'var(--font-body), sans-serif',
+          fontSize: '12px', fontWeight: 600,
+          letterSpacing: '0.05em', textTransform: 'uppercase',
+          color: highlight ? 'rgba(255,255,255,0.6)' : 'var(--text-label)',
+        }}>{label}</p>
+        <span style={{
+          fontSize: '16px', opacity: 0.4,
+          color: highlight ? '#fff' : 'var(--text-label)',
+        }}>↗</span>
+      </div>
+      <p style={{
+        fontFamily: 'var(--font-display), serif',
+        fontSize: '34px', lineHeight: 1, letterSpacing: '-0.01em',
+        color: highlight ? '#fff' : 'var(--navy)',
+      }}>{value}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {highlight
+          ? <span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.5)' }}>
+              {trend !== null ? `${trend >= 0 ? '+' : ''}${trend.toFixed(1)}% ` : ''}{sub}
+            </span>
+          : <><Trend pct={trend} /><span style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{sub}</span></>
+        }
+      </div>
+    </div>
+  )
+}
+
+// ── Waste table ────────────────────────────────────────────────────────────────
+type WasteItem = { name: string; qty: number; value: number; cogs: number; pct: number }
+function WasteTable({ items }: { items: WasteItem[] }) {
+  if (!items.length) return (
+    <p style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text-muted)', padding: '20px 0' }}>
+      No waste data for this period.
+    </p>
+  )
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
         <tr>
-          {['Item', 'Waste Qty', 'Waste %', 'Retail Value', 'COGS'].map(h => (
+          {['Item', 'Waste Qty', 'Waste %', 'Retail Value'].map(h => (
             <th key={h} style={{
-              fontFamily: 'var(--font-body), sans-serif',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: 'var(--text-label)',
-              textAlign: h === 'Item' ? 'left' : 'right',
-              paddingBottom: 10,
-              borderBottom: '1.5px solid var(--border-soft)',
-            }}>
-              {h}
-            </th>
+              fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 700,
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: 'var(--text-label)', textAlign: h === 'Item' ? 'left' : 'right',
+              paddingBottom: 10, borderBottom: '1.5px solid var(--border-soft)',
+            }}>{h}</th>
           ))}
         </tr>
       </thead>
       <tbody>
         {items.map((item, i) => (
-          <tr key={i} style={{ borderBottom: '1px solid var(--border-soft)' }}>
-            <td style={{
-              fontFamily: 'var(--font-body), sans-serif',
-              fontWeight: 500,
-              color: 'var(--navy)',
-              padding: '10px 0',
-              maxWidth: 260,
-            }}>
-              {item.name}
+          <tr key={i}>
+            <td style={{ fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '13px', color: 'var(--navy)', padding: '11px 0', borderBottom: '1px solid var(--border-soft)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--oat)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}>🥐</div>
+                <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+              </div>
             </td>
-            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
+            <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 500, color: 'var(--text-body)', padding: '11px 0', borderBottom: '1px solid var(--border-soft)' }}>
               {item.qty.toFixed(1)}
             </td>
-            <td style={{ textAlign: 'right', padding: '10px 0' }}>
+            <td style={{ textAlign: 'right', padding: '11px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <span style={{
-                background: item.pct > 20 ? 'rgba(215,104,132,0.12)' : 'rgba(208,178,131,0.18)',
-                color: item.pct > 20 ? '#B5405A' : '#7A5C30',
-                borderRadius: 6,
-                padding: '2px 8px',
-                fontWeight: 700,
-                fontSize: '12px',
-              }}>
-                {item.pct.toFixed(1)}%
-              </span>
+                background: item.pct > 20 ? 'rgba(215,104,132,0.12)' : 'rgba(34,92,194,0.08)',
+                color: item.pct > 20 ? '#B5405A' : 'var(--blue)',
+                borderRadius: 20, padding: '2px 9px',
+                fontWeight: 700, fontSize: '11px',
+                fontFamily: 'var(--font-body)',
+              }}>{item.pct.toFixed(1)}%</span>
             </td>
-            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
+            <td style={{ textAlign: 'right', fontSize: '13px', fontWeight: 500, color: 'var(--text-body)', padding: '11px 0', borderBottom: '1px solid var(--border-soft)' }}>
               {fmt(item.value)}
-            </td>
-            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
-              {fmt(item.cogs)}
             </td>
           </tr>
         ))}
@@ -149,69 +154,31 @@ function WasteTable({ items }: { items: WasteItem[] }) {
   )
 }
 
-// ── Waste section (metric cards + table) ──────────────────────────────────────
-function WasteSection({ menuRows }: { menuRows: MenuRow[] }) {
-  const waste = useMemo(() => calcWaste(menuRows), [menuRows])
+// ── Sidebar nav item ──────────────────────────────────────────────────────────
+const NAV = [
+  { id: 'daily',   label: 'Daily',   icon: '◈' },
+  { id: 'weekly',  label: 'Weekly',  icon: '▦' },
+  { id: 'monthly', label: 'Monthly', icon: '▤' },
+  { id: 'ytd',     label: 'YTD',     icon: '◉' },
+  { id: 'compare', label: 'YoY Compare', icon: '⇄' },
+]
 
-  if (!menuRows.length) return null
-
-  return (
-    <div style={{ marginTop: 20 }}>
-      {/* Divider */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 16,
-      }}>
-        <div style={{ height: 1, flex: 1, background: 'var(--border-soft)' }} />
-        <span style={{
-          fontFamily: 'var(--font-body), sans-serif',
-          fontSize: '10px',
-          fontWeight: 700,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-        }}>
-          Waste
-        </span>
-        <div style={{ height: 1, flex: 1, background: 'var(--border-soft)' }} />
-      </div>
-
-      {/* Waste metric cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 16 }}>
-        <MetricCard
-          label="Waste %"
-          value={waste.wastePct.toFixed(1) + '%'}
-          badge={waste.wastePct > 15 ? 'High' : 'OK'}
-          badgeColor={waste.wastePct > 15 ? 'rosy' : 'sand'}
-          large
-        />
-        <MetricCard label="Waste Qty" value={waste.totalWasteQty.toFixed(0)} />
-        <MetricCard label="Waste Value" value={fmt(waste.totalWasteValue)} />
-        <MetricCard label="Waste COGS" value={fmt(waste.totalWasteCogs)} />
-      </div>
-
-      {/* Top waste items table */}
-      {waste.topItems.length > 0 && (
-        <div style={card}>
-          <p style={sectionLabel}>Top waste items by quantity</p>
-          <WasteTable items={waste.topItems} />
-        </div>
-      )}
-    </div>
-  )
+const C = {
+  blue: '#225CC2', blueMid: '#3B74D9',
+  sand: '#D0B283', sandLight: '#E8D4B0',
+  grid: 'rgba(208,178,131,0.18)', tick: '#9A8A98',
+}
+const axisProps = {
+  tick: { fontSize: 10, fill: C.tick, fontFamily: 'var(--font-body)' },
+  axisLine: false as const, tickLine: false as const,
 }
 
-// ── Main dashboard ────────────────────────────────────────────────────────────
+// ── Main dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const [tab, setTab] = useState<Tab>('daily')
-  const [allData, setAllData]   = useState<SalesRow[]>([])
-  const [allMenu, setAllMenu]   = useState<MenuRow[]>([])
-  const [loading, setLoading]   = useState(true)
-
-  // Normalize a raw date value from Supabase to YYYY-MM-DD
-  const norm = (d: string) => String(d).slice(0, 10)
+  const [tab, setTab]         = useState<Tab>('daily')
+  const [allData, setAllData] = useState<SalesRow[]>([])
+  const [allMenu, setAllMenu] = useState<MenuRow[]>([])
+  const [loading, setLoading] = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
   const [dailyDate, setDailyDate] = useState(today)
@@ -228,45 +195,76 @@ export default function Dashboard() {
         supabase.from('menu').select('*').order('business_date', { ascending: true }),
       ])
       setAllData(groupSalesByDate((salesRes.data as SalesRow[]) || []))
-      setAllMenu((menuRes.data as MenuRow[])   || [])
+      setAllMenu((menuRes.data as MenuRow[]) || [])
       setLoading(false)
     }
     load()
   }, [])
 
   // ── DAILY ──
+  const yesterday     = shiftDays(dailyDate, -1)
   const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),  [allData, dailyDate])
+  const prevDayRow    = useMemo(() => allData.find(r => norm(r.business_date) === yesterday),  [allData, yesterday])
   const dailyMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) === dailyDate), [allMenu, dailyDate])
+  const last14        = useMemo(() => {
+    const start = shiftDays(dailyDate, -13)
+    return allData.filter(r => norm(r.business_date) >= start && norm(r.business_date) <= dailyDate)
+  }, [allData, dailyDate])
 
   // ── WEEKLY ──
   const weekFrom     = startOfWeek(new Date(weekDate + 'T00:00:00'))
   const weekTo       = endOfWeek(new Date(weekDate + 'T00:00:00'))
+  const prevWeekFrom = shiftDays(weekFrom, -7)
+  const prevWeekTo   = shiftDays(weekTo, -7)
   const weekRows     = useMemo(() => allData.filter(r => norm(r.business_date) >= weekFrom && norm(r.business_date) <= weekTo), [allData, weekFrom, weekTo])
+  const prevWeekRows = useMemo(() => allData.filter(r => norm(r.business_date) >= prevWeekFrom && norm(r.business_date) <= prevWeekTo), [allData, prevWeekFrom, prevWeekTo])
   const weekMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) >= weekFrom && norm(r.business_date) <= weekTo), [allMenu, weekFrom, weekTo])
   const weekNet      = weekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
   const weekOrders   = weekRows.reduce((s, r) => s + (r.order_count   || 0), 0)
+  const prevWeekNet  = prevWeekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const prevWeekOrd  = prevWeekRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   // ── MONTHLY ──
-  const monthRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(month)), [allData, month])
-  const monthMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(month)), [allMenu, month])
+  const [mY, mM]      = month.split('-').map(Number)
+  const prevMonth     = `${mM === 1 ? mY - 1 : mY}-${String(mM === 1 ? 12 : mM - 1).padStart(2, '0')}`
+  const monthRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(month)),     [allData, month])
+  const prevMonthRows = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(prevMonth)), [allData, prevMonth])
+  const monthMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(month)),     [allMenu, month])
   const monthNet      = monthRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
   const monthOrders   = monthRows.reduce((s, r) => s + (r.order_count   || 0), 0)
+  const prevMonthNet  = prevMonthRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const prevMonthOrd  = prevMonthRows.reduce((s, r) => s + (r.order_count   || 0), 0)
   const monthAvgDaily = monthRows.length ? monthNet / monthRows.length : 0
 
   // ── YTD ──
-  const ytdRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(year)), [allData, year])
-  const ytdMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(year)), [allMenu, year])
+  const ytdRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(year)),            [allData, year])
+  const ytdMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(year)),            [allMenu, year])
+  const prevYtdRows = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(String(parseInt(year) - 1))), [allData, year])
   const ytdNet      = ytdRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
   const ytdOrders   = ytdRows.reduce((s, r) => s + (r.order_count   || 0), 0)
+  const prevYtdNet  = prevYtdRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const prevYtdOrd  = prevYtdRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   const ytdByMonth = useMemo(() => {
     const map: Record<string, number> = {}
-    ytdRows.forEach(r => {
-      const mo = norm(r.business_date).slice(0, 7)
-      map[mo] = (map[mo] || 0) + (r['netsales_$'] || 0)
-    })
+    ytdRows.forEach(r => { const mo = norm(r.business_date).slice(0, 7); map[mo] = (map[mo] || 0) + (r['netsales_$'] || 0) })
     return Object.entries(map).sort().map(([mo, net]) => ({ month: mo.slice(5), net: Math.round(net) }))
   }, [ytdRows])
+
+  const dowData = useMemo(() => {
+    const src = tab === 'ytd' ? ytdRows : weekRows
+    const dowMap: Record<string, { total: number; count: number }> = {}
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    src.forEach(r => {
+      const dow = dayNames[new Date(norm(r.business_date) + 'T00:00:00').getDay()]
+      if (!dowMap[dow]) dowMap[dow] = { total: 0, count: 0 }
+      dowMap[dow].total += r['netsales_$'] || 0
+      dowMap[dow].count++
+    })
+    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({
+      day: d, avg: dowMap[d] ? Math.round(dowMap[d].total / dowMap[d].count) : 0,
+    }))
+  }, [ytdRows, weekRows, tab])
 
   // ── YoY ──
   const [cmpY, cmpM, cmpD] = cmpDate.split('-')
@@ -274,352 +272,378 @@ export default function Dashboard() {
   const cmpRowA  = useMemo(() => allData.find(r => norm(r.business_date) === cmpDate),  [allData, cmpDate])
   const cmpRowB  = useMemo(() => allData.find(r => norm(r.business_date) === prevDate), [allData, prevDate])
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'daily',   label: 'Daily'   },
-    { id: 'weekly',  label: 'Weekly'  },
-    { id: 'monthly', label: 'Monthly' },
-    { id: 'ytd',     label: 'YTD'     },
-    { id: 'compare', label: 'YoY'     },
-  ]
+  // ── Current month progress (sidebar) ──
+  const curMonth      = today.slice(0, 7)
+  const curMonthRows  = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(curMonth)), [allData, curMonth])
+  const curMonthSales = curMonthRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const curMonthGoal  = curMonthSales > 0 ? curMonthSales * (30 / Math.max(curMonthRows.length, 1)) : 0
 
-  const tabBtn = (active: boolean): React.CSSProperties => ({
-    fontFamily: 'var(--font-body), sans-serif',
-    fontSize: '13px',
-    fontWeight: active ? 700 : 500,
-    padding: '8px 18px',
-    borderRadius: 24,
-    border: 'none',
-    background: active ? 'var(--navy)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-label)',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    letterSpacing: '0.01em',
-  })
+  // ── Trend helpers ──
+  const trendPct = (curr: number, prev: number) => prev > 0 ? (curr - prev) / prev * 100 : null
 
   if (loading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--cream)',
-        flexDirection: 'column',
-        gap: 18,
-      }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--cream)', flexDirection: 'column', gap: 18 }}>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{
-          width: 36,
-          height: 36,
-          border: '2.5px solid var(--sand-light)',
-          borderTopColor: 'var(--blue)',
-          borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <p style={{
-          fontFamily: 'var(--font-body), sans-serif',
-          fontSize: '12px',
-          fontWeight: 600,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-        }}>
-          Loading dashboard
-        </p>
+        <div style={{ width: 36, height: 36, border: '2.5px solid var(--sand-light)', borderTopColor: 'var(--blue)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Loading</p>
       </div>
     )
   }
 
+  // ── Per-tab derived values ─────────────────────────────────────────────────
+  const periodLabel = {
+    daily: dailyDate, weekly: `${weekFrom} → ${weekTo}`,
+    monthly: month, ytd: year, compare: `${cmpDate} vs ${prevDate}`,
+  }[tab]
+
+  type KpiConfig = { label: string; value: string; sub: string; trend: number | null; highlight?: boolean }
+
+  const kpis: KpiConfig[] = tab === 'daily' ? [
+    { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: 'vs yesterday', trend: trendPct(dailyRow?.['netsales_$'] ?? 0, prevDayRow?.['netsales_$'] ?? 0), highlight: true },
+    { label: 'Orders', value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: 'vs yesterday', trend: trendPct(dailyRow?.order_count ?? 0, prevDayRow?.order_count ?? 0) },
+    { label: 'Avg Order', value: dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—', sub: 'per transaction', trend: null },
+    { label: 'Waste %', value: dailyMenuRows.length ? calcWaste(dailyMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+  ] : tab === 'weekly' ? [
+    { label: 'Net Sales', value: fmt(weekNet), sub: 'vs last week', trend: trendPct(weekNet, prevWeekNet), highlight: true },
+    { label: 'Total Orders', value: weekOrders.toLocaleString(), sub: 'vs last week', trend: trendPct(weekOrders, prevWeekOrd) },
+    { label: 'Avg Daily', value: weekRows.length ? fmt(weekNet / weekRows.length) : '—', sub: 'daily average', trend: null },
+    { label: 'Waste %', value: weekMenuRows.length ? calcWaste(weekMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+  ] : tab === 'monthly' ? [
+    { label: 'Net Sales', value: fmt(monthNet), sub: 'vs last month', trend: trendPct(monthNet, prevMonthNet), highlight: true },
+    { label: 'Total Orders', value: monthOrders.toLocaleString(), sub: 'vs last month', trend: trendPct(monthOrders, prevMonthOrd) },
+    { label: 'Avg Daily', value: fmt(monthAvgDaily), sub: 'daily average', trend: null },
+    { label: 'Waste %', value: monthMenuRows.length ? calcWaste(monthMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+  ] : tab === 'ytd' ? [
+    { label: 'YTD Net Sales', value: fmt(ytdNet), sub: 'vs prior year', trend: trendPct(ytdNet, prevYtdNet), highlight: true },
+    { label: 'YTD Orders', value: ytdOrders.toLocaleString(), sub: 'vs prior year', trend: trendPct(ytdOrders, prevYtdOrd) },
+    { label: 'Avg Daily', value: ytdRows.length ? fmt(ytdNet / ytdRows.length) : '—', sub: 'daily average', trend: null },
+    { label: 'Waste %', value: ytdMenuRows.length ? calcWaste(ytdMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+  ] : [
+    { label: 'This Year Sales', value: cmpRowA ? fmt(cmpRowA['netsales_$']) : '—', sub: cmpDate, trend: trendPct(cmpRowA?.['netsales_$'] ?? 0, cmpRowB?.['netsales_$'] ?? 0), highlight: true },
+    { label: 'Prior Year Sales', value: cmpRowB ? fmt(cmpRowB['netsales_$']) : '—', sub: prevDate, trend: null },
+    { label: 'Sales Change', value: (cmpRowA && cmpRowB) ? ((cmpRowA['netsales_$'] - cmpRowB['netsales_$']) / cmpRowB['netsales_$'] * 100).toFixed(1) + '%' : '—', sub: 'year-over-year', trend: trendPct(cmpRowA?.['netsales_$'] ?? 0, cmpRowB?.['netsales_$'] ?? 0) },
+    { label: 'Orders Change', value: (cmpRowA && cmpRowB) ? ((cmpRowA.order_count - cmpRowB.order_count) / cmpRowB.order_count * 100).toFixed(1) + '%' : '—', sub: 'year-over-year', trend: trendPct(cmpRowA?.order_count ?? 0, cmpRowB?.order_count ?? 0) },
+  ]
+
+  const activeMenuRows = tab === 'daily' ? dailyMenuRows : tab === 'weekly' ? weekMenuRows : tab === 'monthly' ? monthMenuRows : ytdMenuRows
+  const wasteData = activeMenuRows.length ? calcWaste(activeMenuRows) : null
+
+  // Chart data
+  const mainChartData = tab === 'daily'
+    ? last14.map(r => ({ date: norm(r.business_date).slice(5), sales: r['netsales_$'], orders: r.order_count }))
+    : tab === 'weekly'
+    ? weekRows.map(r => ({ date: norm(r.business_date).slice(5), sales: r['netsales_$'], orders: r.order_count }))
+    : tab === 'monthly'
+    ? monthRows.map(r => ({ date: norm(r.business_date).slice(8), sales: r['netsales_$'], orders: r.order_count }))
+    : ytdByMonth.map(r => ({ date: r.month, sales: r.net, orders: 0 }))
+
+  const inputStyle: React.CSSProperties = {
+    background: 'var(--bg-card-alt)', border: '1.5px solid var(--border)',
+    borderRadius: 10, color: 'var(--navy)',
+    fontFamily: 'var(--font-body), sans-serif', fontSize: '13px', fontWeight: 500,
+    padding: '7px 13px', outline: 'none',
+  }
+
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--cream)' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--cream)' }}>
 
-      {/* ─── HEADER ─── */}
-      <header style={{
+      {/* ─────────────── SIDEBAR ─────────────── */}
+      <aside style={{
+        width: 240, flexShrink: 0,
         background: 'var(--navy)',
-        padding: '0 36px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        height: 66,
+        display: 'flex', flexDirection: 'column',
+        position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {/* Logo */}
+        <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 12,
+              background: 'var(--rosy)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <span style={{ fontFamily: 'var(--font-display), serif', fontSize: '17px', color: '#fff', fontStyle: 'italic' }}>PB</span>
+            </div>
+            <div>
+              <p style={{ fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>Paris Baguette</p>
+              <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>FR-1554 · Edison, NJ</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: '16px 16px 8px' }}>
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'var(--rosy)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(255,255,255,0.07)', borderRadius: 10,
+            padding: '8px 12px',
           }}>
-            <span style={{ fontFamily: 'var(--font-display), serif', fontSize: '16px', color: '#fff', fontStyle: 'italic', lineHeight: 1 }}>
-              PB
-            </span>
-          </div>
-          <div>
-            <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
-              Paris Baguette
-            </p>
-            <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '11px', fontWeight: 400, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.04em' }}>
-              FR-1554 · Edison, NJ · 1739 NJ-27
-            </p>
+            <span style={{ fontSize: '13px', opacity: 0.4, color: '#fff' }}>🔍</span>
+            <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Search...</span>
           </div>
         </div>
-        <div style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.04em' }}>
-          {allData.length} days tracked
+
+        {/* Nav items */}
+        <nav style={{ padding: '8px 12px', flex: 1 }}>
+          <p style={{
+            fontFamily: 'var(--font-body)', fontSize: '9px', fontWeight: 700,
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.3)', padding: '8px 8px 6px',
+          }}>Analytics</p>
+          {NAV.map(item => {
+            const active = tab === item.id
+            return (
+              <button key={item.id} onClick={() => setTab(item.id as Tab)} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '10px 12px', borderRadius: 10,
+                background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                border: 'none', cursor: 'pointer',
+                marginBottom: 2,
+                transition: 'background 0.15s',
+              }}>
+                <span style={{ fontSize: '14px', opacity: active ? 1 : 0.4, color: active ? 'var(--rosy)' : '#fff' }}>{item.icon}</span>
+                <span style={{
+                  fontFamily: 'var(--font-body)', fontSize: '13px', fontWeight: active ? 600 : 400,
+                  color: active ? '#fff' : 'rgba(255,255,255,0.55)',
+                }}>{item.label}</span>
+                {active && <div style={{ marginLeft: 'auto', width: 5, height: 5, borderRadius: '50%', background: 'var(--rosy)' }} />}
+              </button>
+            )
+          })}
+
+          {/* Divider */}
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '12px 8px' }} />
+          <p style={{
+            fontFamily: 'var(--font-body)', fontSize: '9px', fontWeight: 700,
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.3)', padding: '8px 8px 6px',
+          }}>Store</p>
+          {[{ icon: '⚙', label: 'Settings' }, { icon: '?', label: 'Help Center' }].map(item => (
+            <div key={item.label} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 12px', borderRadius: 10, marginBottom: 2,
+              opacity: 0.45,
+            }}>
+              <span style={{ fontSize: '14px', color: '#fff' }}>{item.icon}</span>
+              <span style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: '#fff' }}>{item.label}</span>
+            </div>
+          ))}
+        </nav>
+
+        {/* Monthly goal */}
+        <div style={{
+          margin: '0 12px 20px',
+          background: 'rgba(255,255,255,0.06)',
+          borderRadius: 14, padding: '16px',
+        }}>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+            Monthly Progress
+          </p>
+          <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '20px', color: '#fff', lineHeight: 1, marginBottom: 4 }}>
+            {fmt(curMonthSales)}
+          </p>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', color: 'rgba(255,255,255,0.35)', marginBottom: 10 }}>
+            / {fmt(curMonthGoal)} est. goal
+          </p>
+          <div style={{ height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              background: 'var(--rosy)',
+              width: curMonthGoal > 0 ? `${Math.min(100, curMonthSales / curMonthGoal * 100)}%` : '0%',
+              transition: 'width 0.5s ease',
+            }} />
+          </div>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginTop: 6 }}>
+            {allData.length} days tracked total
+          </p>
         </div>
-      </header>
+      </aside>
 
-      {/* ─── TAB NAV ─── */}
-      <div style={{
-        background: 'var(--cream-deep)',
-        borderBottom: '1.5px solid var(--border-soft)',
-        padding: '10px 32px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-      }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={tabBtn(tab === t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* ─────────────── MAIN CONTENT ─────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
 
-      {/* ─── CONTENT ─── */}
-      <div style={{ maxWidth: 1060, margin: '0 auto', padding: '36px 24px' }}>
-
-        {/* ── DAILY ── */}
-        {tab === 'daily' && (
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '24px 32px 16px',
+          borderBottom: '1.5px solid var(--border-soft)',
+          background: 'var(--cream)',
+          position: 'sticky', top: 0, zIndex: 10,
+        }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={labelStyle}>Date</label>
-              <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-              <MetricCard label="Net Sales"   value={dailyRow ? fmt(dailyRow['netsales_$']) : '—'} badge={dailyRow ? 'Today' : undefined} badgeColor="rosy" large />
-              <MetricCard label="Order Count" value={dailyRow ? dailyRow.order_count.toLocaleString() : '—'} />
-              <MetricCard label="Avg Order"   value={dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—'} />
-              <MetricCard label="Date"        value={dailyDate.slice(5).replace('-', '/')} />
-            </div>
-            {!dailyRow && (
-              <div style={{
-                marginTop: 20,
-                background: 'rgba(208,178,131,0.15)',
-                border: '1.5px solid var(--sand-light)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '14px 18px',
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '13px',
-                fontWeight: 500,
-                color: 'var(--text-body)',
-              }}>
-                No sales record for {dailyDate} — try a different date.
-              </div>
-            )}
-            <WasteSection menuRows={dailyMenuRows} />
+            <p style={{ fontFamily: 'var(--font-body)', fontSize: '11px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>
+              Sales Overview
+            </p>
+            <h1 style={{ fontFamily: 'var(--font-display), serif', fontSize: '26px', color: 'var(--navy)', lineHeight: 1 }}>
+              {NAV.find(n => n.id === tab)?.label}
+            </h1>
           </div>
-        )}
 
-        {/* ── WEEKLY ── */}
-        {tab === 'weekly' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={labelStyle}>Week containing</label>
-              <input type="date" value={weekDate} onChange={e => setWeekDate(e.target.value)} style={inputStyle} />
-              <span style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)',
-                background: 'rgba(208,178,131,0.18)', padding: '6px 12px', borderRadius: 8,
-              }}>
-                {weekFrom.slice(5)} → {weekTo.slice(5)}
-              </span>
+          {/* Period picker */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {tab === 'daily' && <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)} style={inputStyle} />}
+            {tab === 'weekly' && (
+              <>
+                <input type="date" value={weekDate} onChange={e => setWeekDate(e.target.value)} style={inputStyle} />
+                <span style={{ fontFamily: 'var(--font-body)', fontSize: '12px', color: 'var(--text-muted)', background: 'rgba(208,178,131,0.18)', padding: '6px 12px', borderRadius: 8 }}>
+                  {weekFrom.slice(5)} → {weekTo.slice(5)}
+                </span>
+              </>
+            )}
+            {tab === 'monthly' && <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={inputStyle} />}
+            {tab === 'ytd'     && <input type="number" value={year} onChange={e => setYear(e.target.value)} min="2020" max="2030" style={{ ...inputStyle, width: 88 }} />}
+            {tab === 'compare' && <input type="date" value={cmpDate} onChange={e => setCmpDate(e.target.value)} style={inputStyle} />}
+          </div>
+        </div>
+
+        <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* ── KPI CARDS ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+            {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
+          </div>
+
+          {/* ── CHARTS ROW ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+
+            {/* Main chart */}
+            <div style={{
+              background: 'var(--bg-card-alt)', border: '1.5px solid var(--border-soft)',
+              borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '22px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-label)', marginBottom: 4 }}>
+                    {tab === 'ytd' ? 'Monthly Net Sales' : tab === 'daily' ? 'Last 14 Days' : 'Net Sales Trend'}
+                  </p>
+                  <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '28px', color: 'var(--navy)', lineHeight: 1 }}>
+                    {tab === 'daily' ? fmt(last14.reduce((s, r) => s + r['netsales_$'], 0)) :
+                     tab === 'weekly' ? fmt(weekNet) :
+                     tab === 'monthly' ? fmt(monthNet) :
+                     tab === 'ytd' ? fmt(ytdNet) :
+                     fmt((cmpRowA?.['netsales_$'] ?? 0))}
+                  </p>
+                </div>
+                <p style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{periodLabel}</p>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={mainChartData}>
+                  <defs>
+                    <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={C.blue} stopOpacity={0.15} />
+                      <stop offset="95%" stopColor={C.blue} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
+                  <XAxis dataKey="date" {...axisProps} />
+                  <YAxis tickFormatter={fmtK} {...axisProps} />
+                  <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
+                  <Area type="monotone" dataKey="sales" stroke={C.blue} strokeWidth={2.5} fill="url(#salesGrad)" dot={false} name="Net Sales" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-              <MetricCard label="Net Sales"    value={fmt(weekNet)} large />
-              <MetricCard label="Total Orders" value={weekOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily"    value={weekRows.length ? fmt(weekNet / weekRows.length) : '—'} />
-              <MetricCard label="Days"         value={weekRows.length.toString()} />
-            </div>
-            {weekRows.length > 0 && (
-              <div style={card}>
-                <p style={sectionLabel}>Daily net sales — this week</p>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={weekRows.map(r => ({ date: r.business_date.slice(5), sales: r['netsales_$'] }))}>
+
+            {/* Orders / DOW chart */}
+            <div style={{
+              background: 'var(--bg-card-alt)', border: '1.5px solid var(--border-soft)',
+              borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '22px',
+            }}>
+              <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-label)', marginBottom: 4 }}>
+                {tab === 'ytd' || tab === 'weekly' ? 'Avg by Day of Week' : 'Orders Trend'}
+              </p>
+              <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '28px', color: 'var(--navy)', lineHeight: 1, marginBottom: 16 }}>
+                {tab === 'daily' ? (dailyRow?.order_count.toLocaleString() ?? '—') :
+                 tab === 'weekly' ? weekOrders.toLocaleString() :
+                 tab === 'monthly' ? monthOrders.toLocaleString() :
+                 tab === 'ytd' ? ytdOrders.toLocaleString() : '—'}
+              </p>
+              <ResponsiveContainer width="100%" height={183}>
+                {(tab === 'ytd' || tab === 'weekly') ? (
+                  <BarChart data={dowData}>
+                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
+                    <XAxis dataKey="day" {...axisProps} />
+                    <YAxis tickFormatter={fmtK} {...axisProps} />
+                    <Tooltip formatter={(v: number) => [fmt(v), 'Avg Sales']} />
+                    <Bar dataKey="avg" fill={C.sandLight} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                ) : (
+                  <AreaChart data={mainChartData}>
+                    <defs>
+                      <linearGradient id="ordGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={C.sand} stopOpacity={0.2} />
+                        <stop offset="95%" stopColor={C.sand} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
                     <XAxis dataKey="date" {...axisProps} />
-                    <YAxis tickFormatter={fmtK} {...axisProps} />
-                    <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
-                    <Bar dataKey="sales" fill={C.blue} radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            <WasteSection menuRows={weekMenuRows} />
-          </div>
-        )}
-
-        {/* ── MONTHLY ── */}
-        {tab === 'monthly' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={labelStyle}>Month</label>
-              <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-              <MetricCard label="Net Sales"    value={fmt(monthNet)} large />
-              <MetricCard label="Total Orders" value={monthOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily"    value={fmt(monthAvgDaily)} />
-              <MetricCard label="Days"         value={monthRows.length.toString()} />
-            </div>
-            {monthRows.length > 0 && (
-              <div style={card}>
-                <p style={sectionLabel}>Daily performance — {month}</p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={monthRows.map(r => ({ date: r.business_date.slice(8), sales: r['netsales_$'], orders: r.order_count }))}>
-                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
-                    <XAxis dataKey="date" {...axisProps} />
-                    <YAxis yAxisId="left"  tickFormatter={fmtK} {...axisProps} />
-                    <YAxis yAxisId="right" orientation="right" {...axisProps} />
-                    <Tooltip formatter={(v: number, name: string) => [name === 'sales' ? fmt(v) : v.toLocaleString(), name === 'sales' ? 'Net Sales' : 'Orders']} />
-                    <Legend />
-                    <Line yAxisId="left"  type="monotone" dataKey="sales"  stroke={C.blue} strokeWidth={2.5} dot={false} name="sales"  />
-                    <Line yAxisId="right" type="monotone" dataKey="orders" stroke={C.sand} strokeWidth={1.5} dot={false} name="orders" strokeDasharray="4 3" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            <WasteSection menuRows={monthMenuRows} />
-          </div>
-        )}
-
-        {/* ── YTD ── */}
-        {tab === 'ytd' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={labelStyle}>Year</label>
-              <input type="number" value={year} onChange={e => setYear(e.target.value)} min="2020" max="2030" style={{ ...inputStyle, width: 88 }} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-              <MetricCard label="YTD Net Sales" value={fmt(ytdNet)} large />
-              <MetricCard label="YTD Orders"    value={ytdOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily"     value={ytdRows.length ? fmt(ytdNet / ytdRows.length) : '—'} />
-              <MetricCard label="Days Tracked"  value={ytdRows.length.toString()} />
-            </div>
-            {ytdByMonth.length > 0 && (
-              <div style={{ ...card, marginBottom: 16 }}>
-                <p style={sectionLabel}>Monthly net sales — {year}</p>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={ytdByMonth}>
-                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
-                    <XAxis dataKey="month" {...axisProps} />
-                    <YAxis tickFormatter={fmtK} {...axisProps} />
-                    <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
-                    <Bar dataKey="net" fill={C.blue} radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {ytdRows.length > 0 && (() => {
-              const dowMap: Record<string, { total: number; count: number }> = {}
-              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-              ytdRows.forEach(r => {
-                const dow = dayNames[new Date(r.business_date + 'T00:00:00').getDay()]
-                if (!dowMap[dow]) dowMap[dow] = { total: 0, count: 0 }
-                dowMap[dow].total += r['netsales_$'] || 0
-                dowMap[dow].count++
-              })
-              const dowData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({
-                day: d,
-                avg: dowMap[d] ? Math.round(dowMap[d].total / dowMap[d].count) : 0,
-              }))
-              return (
-                <div style={card}>
-                  <p style={sectionLabel}>Average sales by day of week</p>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={dowData}>
-                      <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
-                      <XAxis dataKey="day" {...axisProps} />
-                      <YAxis tickFormatter={fmtK} {...axisProps} />
-                      <Tooltip formatter={(v: number) => [fmt(v), 'Avg Sales']} />
-                      <Bar dataKey="avg" fill={C.blueMid} radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )
-            })()}
-            <WasteSection menuRows={ytdMenuRows} />
-          </div>
-        )}
-
-        {/* ── YoY COMPARE ── */}
-        {tab === 'compare' && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={labelStyle}>Compare date</label>
-              <input type="date" value={cmpDate} onChange={e => setCmpDate(e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div style={{ ...card, borderColor: 'rgba(34,92,194,0.25)', borderWidth: 2 }}>
-                <p style={{ ...sectionLabel, color: 'var(--blue)' }}>{cmpDate}</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <MetricCard label="Net Sales" value={cmpRowA ? fmt(cmpRowA['netsales_$']) : '—'} badge="This Year" badgeColor="blue" />
-                  <MetricCard label="Orders"    value={cmpRowA ? cmpRowA.order_count.toLocaleString() : '—'} />
-                  <MetricCard label="Avg Order" value={cmpRowA?.avg_order ? fmt(cmpRowA.avg_order) : '—'} />
-                  <MetricCard label="Year"      value={cmpY} />
-                </div>
-              </div>
-              <div style={card}>
-                <p style={sectionLabel}>{prevDate} · prior year</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <MetricCard label="Net Sales" value={cmpRowB ? fmt(cmpRowB['netsales_$']) : '—'} />
-                  <MetricCard label="Orders"    value={cmpRowB ? cmpRowB.order_count.toLocaleString() : '—'} />
-                  <MetricCard label="Avg Order" value={cmpRowB?.avg_order ? fmt(cmpRowB.avg_order) : '—'} />
-                  <MetricCard label="Year"      value={(parseInt(cmpY) - 1).toString()} />
-                </div>
-              </div>
-            </div>
-            {(cmpRowA || cmpRowB) && (
-              <div style={{ ...card, marginBottom: 16 }}>
-                <p style={sectionLabel}>Sales & orders comparison</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={[
-                    { label: 'Net Sales', thisYear: cmpRowA?.['netsales_$'] || 0, priorYear: cmpRowB?.['netsales_$'] || 0 },
-                    { label: 'Orders',    thisYear: cmpRowA?.order_count     || 0, priorYear: cmpRowB?.order_count     || 0 },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
-                    <XAxis dataKey="label" {...axisProps} />
                     <YAxis {...axisProps} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="thisYear"  name={cmpDate}  fill={C.blue}      radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="priorYear" name={prevDate} fill={C.sandLight} radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {cmpRowA && cmpRowB && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                {[
-                  { label: 'Net Sales', a: cmpRowA['netsales_$'], b: cmpRowB['netsales_$'], isCurrency: true },
-                  { label: 'Orders',    a: cmpRowA.order_count,   b: cmpRowB.order_count,   isCurrency: false },
-                ].map(({ label, a, b, isCurrency }) => {
-                  const pct = b ? ((a - b) / b * 100) : 0
-                  const up  = pct >= 0
-                  return (
-                    <div key={label} style={{ ...card, borderColor: up ? 'rgba(46,125,82,0.2)' : 'rgba(192,57,43,0.2)', borderWidth: 2 }}>
-                      <p style={sectionLabel}>{label} year-over-year</p>
-                      <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '52px', lineHeight: 1, color: up ? '#2E7D52' : '#C0392B', letterSpacing: '-0.01em' }}>
-                        {up ? '+' : ''}{pct.toFixed(1)}%
-                      </p>
-                      <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', marginTop: 10 }}>
-                        {isCurrency ? fmt(a - b) : (a - b > 0 ? '+' : '') + (a - b).toLocaleString()}{' '}vs prior year
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    <Tooltip formatter={(v: number) => [v.toLocaleString(), 'Orders']} />
+                    <Area type="monotone" dataKey="orders" stroke={C.sand} strokeWidth={2} fill="url(#ordGrad)" dot={false} name="Orders" />
+                  </AreaChart>
+                )}
+              </ResponsiveContainer>
+            </div>
           </div>
-        )}
 
+          {/* ── BOTTOM ROW ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16 }}>
+
+            {/* Waste items table */}
+            <div style={{
+              background: 'var(--bg-card-alt)', border: '1.5px solid var(--border-soft)',
+              borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '22px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                <p style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--navy)' }}>Top Waste Items</p>
+                {wasteData && (
+                  <span style={{
+                    fontFamily: 'var(--font-body)', fontSize: '11px', fontWeight: 700,
+                    background: wasteData.wastePct > 15 ? 'rgba(215,104,132,0.12)' : 'rgba(34,92,194,0.08)',
+                    color: wasteData.wastePct > 15 ? '#B5405A' : 'var(--blue)',
+                    padding: '4px 12px', borderRadius: 20,
+                  }}>
+                    {wasteData.wastePct.toFixed(1)}% waste rate
+                  </span>
+                )}
+              </div>
+              <WasteTable items={wasteData?.topItems ?? []} />
+            </div>
+
+            {/* Waste summary stats */}
+            <div style={{
+              background: 'var(--bg-card-alt)', border: '1.5px solid var(--border-soft)',
+              borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '22px',
+            }}>
+              <p style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--navy)', marginBottom: 18 }}>Waste Summary</p>
+              {wasteData ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {[
+                    { label: 'Waste Rate',    value: wasteData.wastePct.toFixed(1) + '%',   sub: 'of total inventory' },
+                    { label: 'Units Wasted',  value: Math.round(wasteData.totalWasteQty).toLocaleString(), sub: 'total units' },
+                    { label: 'Retail Value',  value: fmt(wasteData.totalWasteValue),         sub: 'at retail price' },
+                    { label: 'COGS Impact',   value: fmt(wasteData.totalWasteCogs),          sub: 'cost of goods' },
+                  ].map((item, i, arr) => (
+                    <div key={item.label} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '14px 0',
+                      borderBottom: i < arr.length - 1 ? '1px solid var(--border-soft)' : 'none',
+                    }}>
+                      <div>
+                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '12px', fontWeight: 600, color: 'var(--text-label)', letterSpacing: '0.04em' }}>{item.label}</p>
+                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)', marginTop: 2 }}>{item.sub}</p>
+                      </div>
+                      <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '22px', color: 'var(--navy)' }}>{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text-muted)', paddingTop: 20 }}>No waste data for this period.</p>
+              )}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   )
