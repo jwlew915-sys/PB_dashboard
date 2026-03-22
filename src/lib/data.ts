@@ -94,12 +94,12 @@ export async function fetchWasteRange(from: string, to: string): Promise<MenuRow
   return data as MenuRow[]
 }
 
-export function calcWaste(rows: MenuRow[]) {
+export function calcWaste(rows: MenuRow[], netSales: number) {
   const totalWasteQty   = rows.reduce((s, r) => s + (r.quantity || 0), 0)
-  const totalQty        = rows.reduce((s, r) => s + (r.total_quantity || 0), 0)
   const totalWasteValue = rows.reduce((s, r) => s + (r.total_retail_value || 0), 0)
   const totalWasteCogs  = rows.reduce((s, r) => s + (r.total_item_cogs || 0), 0)
-  const wastePct        = totalQty > 0 ? (totalWasteQty / totalQty) * 100 : 0
+  // Waste % = total waste retail value / net sales
+  const wastePct        = netSales > 0 ? (totalWasteValue / netSales) * 100 : 0
 
   // Aggregate by item name across multiple dates
   const byItem: Record<string, { name: string; qty: number; value: number; cogs: number; totalQty: number }> = {}

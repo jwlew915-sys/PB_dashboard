@@ -316,22 +316,22 @@ export default function Dashboard() {
     { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: fmtTrend(dailySalesTrend), trend: dailySalesTrend, highlight: true },
     { label: 'Orders',    value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: fmtTrend(dailyOrderTrend), trend: dailyOrderTrend },
     { label: 'Avg Order', value: dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—', sub: 'per transaction', trend: null },
-    { label: 'Waste %', value: dailyMenuRows.length ? calcWaste(dailyMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+    { label: 'Waste %', value: dailyMenuRows.length ? calcWaste(dailyMenuRows, dailyRow?.['netsales_$'] ?? 0).wastePct.toFixed(1) + '%' : '—', sub: 'of net sales', trend: null },
   ] : tab === 'weekly' ? [
     { label: 'Net Sales', value: fmt(weekNet), sub: 'vs last week', trend: trendPct(weekNet, prevWeekNet), highlight: true },
     { label: 'Total Orders', value: weekOrders.toLocaleString(), sub: 'vs last week', trend: trendPct(weekOrders, prevWeekOrd) },
     { label: 'Avg Daily', value: weekRows.length ? fmt(weekNet / weekRows.length) : '—', sub: 'daily average', trend: null },
-    { label: 'Waste %', value: weekMenuRows.length ? calcWaste(weekMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+    { label: 'Waste %', value: weekMenuRows.length ? calcWaste(weekMenuRows, weekNet).wastePct.toFixed(1) + '%' : '—', sub: 'of net sales', trend: null },
   ] : tab === 'monthly' ? [
     { label: 'Net Sales', value: fmt(monthNet), sub: 'vs last month', trend: trendPct(monthNet, prevMonthNet), highlight: true },
     { label: 'Total Orders', value: monthOrders.toLocaleString(), sub: 'vs last month', trend: trendPct(monthOrders, prevMonthOrd) },
     { label: 'Avg Daily', value: fmt(monthAvgDaily), sub: 'daily average', trend: null },
-    { label: 'Waste %', value: monthMenuRows.length ? calcWaste(monthMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+    { label: 'Waste %', value: monthMenuRows.length ? calcWaste(monthMenuRows, monthNet).wastePct.toFixed(1) + '%' : '—', sub: 'of net sales', trend: null },
   ] : tab === 'ytd' ? [
     { label: 'YTD Net Sales', value: fmt(ytdNet), sub: 'vs prior year', trend: trendPct(ytdNet, prevYtdNet), highlight: true },
     { label: 'YTD Orders', value: ytdOrders.toLocaleString(), sub: 'vs prior year', trend: trendPct(ytdOrders, prevYtdOrd) },
     { label: 'Avg Daily', value: ytdRows.length ? fmt(ytdNet / ytdRows.length) : '—', sub: 'daily average', trend: null },
-    { label: 'Waste %', value: ytdMenuRows.length ? calcWaste(ytdMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
+    { label: 'Waste %', value: ytdMenuRows.length ? calcWaste(ytdMenuRows, ytdNet).wastePct.toFixed(1) + '%' : '—', sub: 'of net sales', trend: null },
   ] : [
     { label: 'This Year Sales', value: cmpRowA ? fmt(cmpRowA['netsales_$']) : '—', sub: cmpDate, trend: trendPct(cmpRowA?.['netsales_$'] ?? 0, cmpRowB?.['netsales_$'] ?? 0), highlight: true },
     { label: 'Prior Year Sales', value: cmpRowB ? fmt(cmpRowB['netsales_$']) : '—', sub: prevDate, trend: null },
@@ -340,7 +340,8 @@ export default function Dashboard() {
   ]
 
   const activeMenuRows = tab === 'daily' ? dailyMenuRows : tab === 'weekly' ? weekMenuRows : tab === 'monthly' ? monthMenuRows : ytdMenuRows
-  const wasteData = activeMenuRows.length ? calcWaste(activeMenuRows) : null
+  const activeNetSales = tab === 'daily' ? (dailyRow?.['netsales_$'] ?? 0) : tab === 'weekly' ? weekNet : tab === 'monthly' ? monthNet : ytdNet
+  const wasteData = activeMenuRows.length ? calcWaste(activeMenuRows, activeNetSales) : null
 
   // Chart data
   const mainChartData = tab === 'daily'
