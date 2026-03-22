@@ -20,7 +20,7 @@ const https   = require('https')
 const os      = require('os')
 
 const INBOX_DIR     = path.join(os.homedir(), 'Downloads', 'Toast Waste Reports', 'inbox')
-const PROCESSED_DIR = path.join(os.homedir(), 'Downloads', 'Toast Waste Reports', 'processed')
+const PROCESSED_DIR = path.join(os.homedir(), 'Downloads', 'Toast Waste Reports', 'imported')
 const SB_HOST       = 'iofqztuvehflpgaxjplt.supabase.co'
 const SB_KEY        = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvZnF6dHV2ZWhmbHBnYXhqcGx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwODIzNDMsImV4cCI6MjA4OTY1ODM0M30.Op9_PzpQV4OgCvVKCueGKp7DNCXRV7JYM_dqOf2wfLI'
 
