@@ -202,11 +202,8 @@ export default function Dashboard() {
   }, [])
 
   // ── DAILY ──
-  const sameDayPriorYear = useMemo(() => {
-    const d = new Date(dailyDate + 'T00:00:00')
-    d.setFullYear(d.getFullYear() - 1)
-    return d.toISOString().slice(0, 10)
-  }, [dailyDate])
+  // 52 weeks back = exact same day of week, same time of year, prior year
+  const sameDayPriorYear = useMemo(() => shiftDays(dailyDate, -364), [dailyDate])
   const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),        [allData, dailyDate])
   const prevDayRow    = useMemo(() => allData.find(r => norm(r.business_date) === sameDayPriorYear), [allData, sameDayPriorYear])
   const dailyMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) === dailyDate), [allMenu, dailyDate])
