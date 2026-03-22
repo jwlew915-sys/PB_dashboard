@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, SalesRow } from '@/lib/supabase'
+import { supabase, SalesRow, MenuRow } from '@/lib/supabase'
+import { calcWaste } from '@/lib/data'
 import MetricCard from '@/components/MetricCard'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -26,14 +27,15 @@ function endOfWeek(date: Date) {
 }
 
 const C = {
-  blue:     '#225CC2',
-  blueMid:  '#3B74D9',
-  navy:     '#17294C',
-  sand:     '#D0B283',
-  sandLight:'#E8D4B0',
-  rosy:     '#D76884',
-  grid:     'rgba(208,178,131,0.2)',
-  tick:     '#9A8A98',
+  blue:      '#225CC2',
+  blueMid:   '#3B74D9',
+  navy:      '#17294C',
+  sand:      '#D0B283',
+  sandLight: '#E8D4B0',
+  rosy:      '#D76884',
+  rosyLight: '#F2B8C6',
+  grid:      'rgba(208,178,131,0.2)',
+  tick:      '#9A8A98',
 }
 
 const axisProps = {
@@ -72,63 +74,187 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
+const labelStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-body), sans-serif',
+  fontSize: '12px',
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text-label)',
+}
+
+// ── Waste table component ─────────────────────────────────────────────────────
+type WasteItem = { name: string; qty: number; value: number; cogs: number; pct: number }
+
+function WasteTable({ items }: { items: WasteItem[] }) {
+  if (!items.length) return null
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+      <thead>
+        <tr>
+          {['Item', 'Waste Qty', 'Waste %', 'Retail Value', 'COGS'].map(h => (
+            <th key={h} style={{
+              fontFamily: 'var(--font-body), sans-serif',
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'var(--text-label)',
+              textAlign: h === 'Item' ? 'left' : 'right',
+              paddingBottom: 10,
+              borderBottom: '1.5px solid var(--border-soft)',
+            }}>
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item, i) => (
+          <tr key={i} style={{ borderBottom: '1px solid var(--border-soft)' }}>
+            <td style={{
+              fontFamily: 'var(--font-body), sans-serif',
+              fontWeight: 500,
+              color: 'var(--navy)',
+              padding: '10px 0',
+              maxWidth: 260,
+            }}>
+              {item.name}
+            </td>
+            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
+              {item.qty.toFixed(1)}
+            </td>
+            <td style={{ textAlign: 'right', padding: '10px 0' }}>
+              <span style={{
+                background: item.pct > 20 ? 'rgba(215,104,132,0.12)' : 'rgba(208,178,131,0.18)',
+                color: item.pct > 20 ? '#B5405A' : '#7A5C30',
+                borderRadius: 6,
+                padding: '2px 8px',
+                fontWeight: 700,
+                fontSize: '12px',
+              }}>
+                {item.pct.toFixed(1)}%
+              </span>
+            </td>
+            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
+              {fmt(item.value)}
+            </td>
+            <td style={{ textAlign: 'right', padding: '10px 0', color: 'var(--text-body)', fontWeight: 500 }}>
+              {fmt(item.cogs)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Waste section (metric cards + table) ──────────────────────────────────────
+function WasteSection({ menuRows }: { menuRows: MenuRow[] }) {
+  const waste = useMemo(() => calcWaste(menuRows), [menuRows])
+
+  if (!menuRows.length) return null
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      {/* Divider */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 16,
+      }}>
+        <div style={{ height: 1, flex: 1, background: 'var(--border-soft)' }} />
+        <span style={{
+          fontFamily: 'var(--font-body), sans-serif',
+          fontSize: '10px',
+          fontWeight: 700,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: 'var(--text-muted)',
+        }}>
+          Waste
+        </span>
+        <div style={{ height: 1, flex: 1, background: 'var(--border-soft)' }} />
+      </div>
+
+      {/* Waste metric cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 16 }}>
+        <MetricCard
+          label="Waste %"
+          value={waste.wastePct.toFixed(1) + '%'}
+          badge={waste.wastePct > 15 ? 'High' : 'OK'}
+          badgeColor={waste.wastePct > 15 ? 'rosy' : 'sand'}
+          large
+        />
+        <MetricCard label="Waste Qty" value={waste.totalWasteQty.toFixed(0)} />
+        <MetricCard label="Waste Value" value={fmt(waste.totalWasteValue)} />
+        <MetricCard label="Waste COGS" value={fmt(waste.totalWasteCogs)} />
+      </div>
+
+      {/* Top waste items table */}
+      {waste.topItems.length > 0 && (
+        <div style={card}>
+          <p style={sectionLabel}>Top waste items by quantity</p>
+          <WasteTable items={waste.topItems} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>('daily')
-  const [allData, setAllData] = useState<SalesRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [allData, setAllData]   = useState<SalesRow[]>([])
+  const [allMenu, setAllMenu]   = useState<MenuRow[]>([])
+  const [loading, setLoading]   = useState(true)
 
   const today = new Date().toISOString().slice(0, 10)
   const [dailyDate, setDailyDate] = useState(today)
-  const [weekDate, setWeekDate] = useState(today)
-  const [month, setMonth] = useState(today.slice(0, 7))
-  const [year, setYear] = useState(new Date().getFullYear().toString())
-  const [cmpDate, setCmpDate] = useState(today)
+  const [weekDate,  setWeekDate]  = useState(today)
+  const [month,     setMonth]     = useState(today.slice(0, 7))
+  const [year,      setYear]      = useState(new Date().getFullYear().toString())
+  const [cmpDate,   setCmpDate]   = useState(today)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase
-        .from('sales')
-        .select('*')
-        .order('business_date', { ascending: true })
-      setAllData((data as SalesRow[]) || [])
+      const [salesRes, menuRes] = await Promise.all([
+        supabase.from('sales').select('*').order('business_date', { ascending: true }),
+        supabase.from('menu').select('*').order('business_date', { ascending: true }),
+      ])
+      setAllData((salesRes.data as SalesRow[]) || [])
+      setAllMenu((menuRes.data as MenuRow[])   || [])
       setLoading(false)
     }
     load()
   }, [])
 
   // ── DAILY ──
-  const dailyRow = useMemo(
-    () => allData.find(r => r.business_date === dailyDate),
-    [allData, dailyDate],
-  )
+  const dailyRow      = useMemo(() => allData.find(r => r.business_date === dailyDate), [allData, dailyDate])
+  const dailyMenuRows = useMemo(() => allMenu.filter(r => r.business_date === dailyDate), [allMenu, dailyDate])
 
   // ── WEEKLY ──
-  const weekFrom = startOfWeek(new Date(weekDate + 'T00:00:00'))
-  const weekTo   = endOfWeek(new Date(weekDate + 'T00:00:00'))
-  const weekRows = useMemo(
-    () => allData.filter(r => r.business_date >= weekFrom && r.business_date <= weekTo),
-    [allData, weekFrom, weekTo],
-  )
-  const weekNet    = weekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
-  const weekOrders = weekRows.reduce((s, r) => s + (r.order_count || 0), 0)
+  const weekFrom    = startOfWeek(new Date(weekDate + 'T00:00:00'))
+  const weekTo      = endOfWeek(new Date(weekDate + 'T00:00:00'))
+  const weekRows    = useMemo(() => allData.filter(r => r.business_date >= weekFrom && r.business_date <= weekTo), [allData, weekFrom, weekTo])
+  const weekMenuRows = useMemo(() => allMenu.filter(r => r.business_date >= weekFrom && r.business_date <= weekTo), [allMenu, weekFrom, weekTo])
+  const weekNet     = weekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const weekOrders  = weekRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   // ── MONTHLY ──
-  const monthRows = useMemo(
-    () => allData.filter(r => r.business_date.startsWith(month)),
-    [allData, month],
-  )
+  const monthRows     = useMemo(() => allData.filter(r => r.business_date.startsWith(month)), [allData, month])
+  const monthMenuRows = useMemo(() => allMenu.filter(r => r.business_date.startsWith(month)), [allMenu, month])
   const monthNet      = monthRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
-  const monthOrders   = monthRows.reduce((s, r) => s + (r.order_count || 0), 0)
+  const monthOrders   = monthRows.reduce((s, r) => s + (r.order_count   || 0), 0)
   const monthAvgDaily = monthRows.length ? monthNet / monthRows.length : 0
 
   // ── YTD ──
-  const ytdRows = useMemo(
-    () => allData.filter(r => r.business_date.startsWith(year)),
-    [allData, year],
-  )
-  const ytdNet    = ytdRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
-  const ytdOrders = ytdRows.reduce((s, r) => s + (r.order_count || 0), 0)
+  const ytdRows     = useMemo(() => allData.filter(r => r.business_date.startsWith(year)), [allData, year])
+  const ytdMenuRows = useMemo(() => allMenu.filter(r => r.business_date.startsWith(year)), [allMenu, year])
+  const ytdNet      = ytdRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const ytdOrders   = ytdRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   const ytdByMonth = useMemo(() => {
     const map: Record<string, number> = {}
@@ -142,7 +268,7 @@ export default function Dashboard() {
   // ── YoY ──
   const [cmpY, cmpM, cmpD] = cmpDate.split('-')
   const prevDate = `${parseInt(cmpY) - 1}-${cmpM}-${cmpD}`
-  const cmpRowA  = useMemo(() => allData.find(r => r.business_date === cmpDate), [allData, cmpDate])
+  const cmpRowA  = useMemo(() => allData.find(r => r.business_date === cmpDate),  [allData, cmpDate])
   const cmpRowB  = useMemo(() => allData.find(r => r.business_date === prevDate), [allData, prevDate])
 
   const tabs: { id: Tab; label: string }[] = [
@@ -214,56 +340,26 @@ export default function Dashboard() {
         height: 66,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Monogram badge */}
           <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
+            width: 36, height: 36, borderRadius: 10,
             background: 'var(--rosy)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <span style={{
-              fontFamily: 'var(--font-display), serif',
-              fontSize: '16px',
-              color: '#fff',
-              fontStyle: 'italic',
-              lineHeight: 1,
-            }}>
+            <span style={{ fontFamily: 'var(--font-display), serif', fontSize: '16px', color: '#fff', fontStyle: 'italic', lineHeight: 1 }}>
               PB
             </span>
           </div>
           <div>
-            <p style={{
-              fontFamily: 'var(--font-body), sans-serif',
-              fontSize: '14px',
-              fontWeight: 700,
-              color: '#fff',
-              letterSpacing: '0.02em',
-              lineHeight: 1.2,
-            }}>
+            <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', letterSpacing: '0.02em', lineHeight: 1.2 }}>
               Paris Baguette
             </p>
-            <p style={{
-              fontFamily: 'var(--font-body), sans-serif',
-              fontSize: '11px',
-              fontWeight: 400,
-              color: 'rgba(255,255,255,0.5)',
-              letterSpacing: '0.04em',
-            }}>
+            <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '11px', fontWeight: 400, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.04em' }}>
               FR-1554 · Edison, NJ · 1739 NJ-27
             </p>
           </div>
         </div>
-        <div style={{
-          fontFamily: 'var(--font-body), sans-serif',
-          fontSize: '11px',
-          fontWeight: 500,
-          color: 'rgba(255,255,255,0.4)',
-          letterSpacing: '0.04em',
-        }}>
+        <div style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '11px', fontWeight: 500, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.04em' }}>
           {allData.length} days tracked
         </div>
       </header>
@@ -291,34 +387,14 @@ export default function Dashboard() {
         {tab === 'daily' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-label)',
-              }}>
-                Date
-              </label>
-              <input
-                type="date"
-                value={dailyDate}
-                onChange={e => setDailyDate(e.target.value)}
-                style={inputStyle}
-              />
+              <label style={labelStyle}>Date</label>
+              <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)} style={inputStyle} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-              <MetricCard
-                label="Net Sales"
-                value={dailyRow ? fmt(dailyRow['netsales_$']) : '—'}
-                badge={dailyRow ? 'Today' : undefined}
-                badgeColor="rosy"
-                large
-              />
+              <MetricCard label="Net Sales"   value={dailyRow ? fmt(dailyRow['netsales_$']) : '—'} badge={dailyRow ? 'Today' : undefined} badgeColor="rosy" large />
               <MetricCard label="Order Count" value={dailyRow ? dailyRow.order_count.toLocaleString() : '—'} />
-              <MetricCard label="Avg Order" value={dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—'} />
-              <MetricCard label="Date" value={dailyDate.slice(5).replace('-', '/')} />
+              <MetricCard label="Avg Order"   value={dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—'} />
+              <MetricCard label="Date"        value={dailyDate.slice(5).replace('-', '/')} />
             </div>
             {!dailyRow && (
               <div style={{
@@ -332,9 +408,10 @@ export default function Dashboard() {
                 fontWeight: 500,
                 color: 'var(--text-body)',
               }}>
-                No record found for {dailyDate} — try a different date.
+                No sales record for {dailyDate} — try a different date.
               </div>
             )}
+            <WasteSection menuRows={dailyMenuRows} />
           </div>
         )}
 
@@ -342,39 +419,21 @@ export default function Dashboard() {
         {tab === 'weekly' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-label)',
-              }}>
-                Week containing
-              </label>
-              <input
-                type="date"
-                value={weekDate}
-                onChange={e => setWeekDate(e.target.value)}
-                style={inputStyle}
-              />
+              <label style={labelStyle}>Week containing</label>
+              <input type="date" value={weekDate} onChange={e => setWeekDate(e.target.value)} style={inputStyle} />
               <span style={{
                 fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '13px',
-                fontWeight: 500,
-                color: 'var(--text-muted)',
-                background: 'rgba(208,178,131,0.18)',
-                padding: '6px 12px',
-                borderRadius: 8,
+                fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)',
+                background: 'rgba(208,178,131,0.18)', padding: '6px 12px', borderRadius: 8,
               }}>
                 {weekFrom.slice(5)} → {weekTo.slice(5)}
               </span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-              <MetricCard label="Net Sales" value={fmt(weekNet)} large />
+              <MetricCard label="Net Sales"    value={fmt(weekNet)} large />
               <MetricCard label="Total Orders" value={weekOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily" value={weekRows.length ? fmt(weekNet / weekRows.length) : '—'} />
-              <MetricCard label="Days" value={weekRows.length.toString()} />
+              <MetricCard label="Avg Daily"    value={weekRows.length ? fmt(weekNet / weekRows.length) : '—'} />
+              <MetricCard label="Days"         value={weekRows.length.toString()} />
             </div>
             {weekRows.length > 0 && (
               <div style={card}>
@@ -390,6 +449,7 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               </div>
             )}
+            <WasteSection menuRows={weekMenuRows} />
           </div>
         )}
 
@@ -397,53 +457,33 @@ export default function Dashboard() {
         {tab === 'monthly' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-label)',
-              }}>
-                Month
-              </label>
-              <input
-                type="month"
-                value={month}
-                onChange={e => setMonth(e.target.value)}
-                style={inputStyle}
-              />
+              <label style={labelStyle}>Month</label>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={inputStyle} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
-              <MetricCard label="Net Sales" value={fmt(monthNet)} large />
+              <MetricCard label="Net Sales"    value={fmt(monthNet)} large />
               <MetricCard label="Total Orders" value={monthOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily" value={fmt(monthAvgDaily)} />
-              <MetricCard label="Days" value={monthRows.length.toString()} />
+              <MetricCard label="Avg Daily"    value={fmt(monthAvgDaily)} />
+              <MetricCard label="Days"         value={monthRows.length.toString()} />
             </div>
             {monthRows.length > 0 && (
               <div style={card}>
                 <p style={sectionLabel}>Daily performance — {month}</p>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={monthRows.map(r => ({
-                    date: r.business_date.slice(8),
-                    sales: r['netsales_$'],
-                    orders: r.order_count,
-                  }))}>
+                  <LineChart data={monthRows.map(r => ({ date: r.business_date.slice(8), sales: r['netsales_$'], orders: r.order_count }))}>
                     <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
                     <XAxis dataKey="date" {...axisProps} />
                     <YAxis yAxisId="left"  tickFormatter={fmtK} {...axisProps} />
                     <YAxis yAxisId="right" orientation="right" {...axisProps} />
-                    <Tooltip formatter={(v: number, name: string) => [
-                      name === 'sales' ? fmt(v) : v.toLocaleString(),
-                      name === 'sales' ? 'Net Sales' : 'Orders',
-                    ]} />
+                    <Tooltip formatter={(v: number, name: string) => [name === 'sales' ? fmt(v) : v.toLocaleString(), name === 'sales' ? 'Net Sales' : 'Orders']} />
                     <Legend />
-                    <Line yAxisId="left"  type="monotone" dataKey="sales"  stroke={C.blue}  strokeWidth={2.5} dot={false} name="sales"  />
-                    <Line yAxisId="right" type="monotone" dataKey="orders" stroke={C.sand}  strokeWidth={1.5} dot={false} name="orders" strokeDasharray="4 3" />
+                    <Line yAxisId="left"  type="monotone" dataKey="sales"  stroke={C.blue} strokeWidth={2.5} dot={false} name="sales"  />
+                    <Line yAxisId="right" type="monotone" dataKey="orders" stroke={C.sand} strokeWidth={1.5} dot={false} name="orders" strokeDasharray="4 3" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             )}
+            <WasteSection menuRows={monthMenuRows} />
           </div>
         )}
 
@@ -451,30 +491,14 @@ export default function Dashboard() {
         {tab === 'ytd' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-label)',
-              }}>
-                Year
-              </label>
-              <input
-                type="number"
-                value={year}
-                onChange={e => setYear(e.target.value)}
-                min="2020"
-                max="2030"
-                style={{ ...inputStyle, width: 88 }}
-              />
+              <label style={labelStyle}>Year</label>
+              <input type="number" value={year} onChange={e => setYear(e.target.value)} min="2020" max="2030" style={{ ...inputStyle, width: 88 }} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
               <MetricCard label="YTD Net Sales" value={fmt(ytdNet)} large />
-              <MetricCard label="YTD Orders" value={ytdOrders.toLocaleString()} />
-              <MetricCard label="Avg Daily" value={ytdRows.length ? fmt(ytdNet / ytdRows.length) : '—'} />
-              <MetricCard label="Days Tracked" value={ytdRows.length.toString()} />
+              <MetricCard label="YTD Orders"    value={ytdOrders.toLocaleString()} />
+              <MetricCard label="Avg Daily"     value={ytdRows.length ? fmt(ytdNet / ytdRows.length) : '—'} />
+              <MetricCard label="Days Tracked"  value={ytdRows.length.toString()} />
             </div>
             {ytdByMonth.length > 0 && (
               <div style={{ ...card, marginBottom: 16 }}>
@@ -518,6 +542,7 @@ export default function Dashboard() {
                 </div>
               )
             })()}
+            <WasteSection menuRows={ytdMenuRows} />
           </div>
         )}
 
@@ -525,32 +550,11 @@ export default function Dashboard() {
         {tab === 'compare' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <label style={{
-                fontFamily: 'var(--font-body), sans-serif',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-label)',
-              }}>
-                Compare date
-              </label>
-              <input
-                type="date"
-                value={cmpDate}
-                onChange={e => setCmpDate(e.target.value)}
-                style={inputStyle}
-              />
+              <label style={labelStyle}>Compare date</label>
+              <input type="date" value={cmpDate} onChange={e => setCmpDate(e.target.value)} style={inputStyle} />
             </div>
-
-            {/* Two columns */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              {/* This year */}
-              <div style={{
-                ...card,
-                borderColor: 'rgba(34,92,194,0.25)',
-                borderWidth: 2,
-              }}>
+              <div style={{ ...card, borderColor: 'rgba(34,92,194,0.25)', borderWidth: 2 }}>
                 <p style={{ ...sectionLabel, color: 'var(--blue)' }}>{cmpDate}</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <MetricCard label="Net Sales" value={cmpRowA ? fmt(cmpRowA['netsales_$']) : '—'} badge="This Year" badgeColor="blue" />
@@ -559,7 +563,6 @@ export default function Dashboard() {
                   <MetricCard label="Year"      value={cmpY} />
                 </div>
               </div>
-              {/* Prior year */}
               <div style={card}>
                 <p style={sectionLabel}>{prevDate} · prior year</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -570,8 +573,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-
-            {/* Bar comparison chart */}
             {(cmpRowA || cmpRowB) && (
               <div style={{ ...card, marginBottom: 16 }}>
                 <p style={sectionLabel}>Sales & orders comparison</p>
@@ -585,14 +586,12 @@ export default function Dashboard() {
                     <YAxis {...axisProps} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="thisYear"  name={cmpDate}   fill={C.blue}  radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="priorYear" name={prevDate}  fill={C.sandLight} radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="thisYear"  name={cmpDate}  fill={C.blue}      radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="priorYear" name={prevDate} fill={C.sandLight} radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
-
-            {/* YoY delta */}
             {cmpRowA && cmpRowB && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {[
@@ -602,32 +601,13 @@ export default function Dashboard() {
                   const pct = b ? ((a - b) / b * 100) : 0
                   const up  = pct >= 0
                   return (
-                    <div key={label} style={{
-                      ...card,
-                      borderColor: up ? 'rgba(46,125,82,0.2)' : 'rgba(192,57,43,0.2)',
-                      borderWidth: 2,
-                    }}>
+                    <div key={label} style={{ ...card, borderColor: up ? 'rgba(46,125,82,0.2)' : 'rgba(192,57,43,0.2)', borderWidth: 2 }}>
                       <p style={sectionLabel}>{label} year-over-year</p>
-                      <p style={{
-                        fontFamily: 'var(--font-display), serif',
-                        fontSize: '52px',
-                        lineHeight: 1,
-                        color: up ? '#2E7D52' : '#C0392B',
-                        letterSpacing: '-0.01em',
-                      }}>
+                      <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '52px', lineHeight: 1, color: up ? '#2E7D52' : '#C0392B', letterSpacing: '-0.01em' }}>
                         {up ? '+' : ''}{pct.toFixed(1)}%
                       </p>
-                      <p style={{
-                        fontFamily: 'var(--font-body), sans-serif',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        color: 'var(--text-muted)',
-                        marginTop: 10,
-                      }}>
-                        {isCurrency
-                          ? fmt(a - b)
-                          : (a - b > 0 ? '+' : '') + (a - b).toLocaleString()
-                        }{' '}vs prior year
+                      <p style={{ fontFamily: 'var(--font-body), sans-serif', fontSize: '12px', fontWeight: 500, color: 'var(--text-muted)', marginTop: 10 }}>
+                        {isCurrency ? fmt(a - b) : (a - b > 0 ? '+' : '') + (a - b).toLocaleString()}{' '}vs prior year
                       </p>
                     </div>
                   )

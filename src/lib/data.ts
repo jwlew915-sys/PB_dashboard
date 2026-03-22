@@ -1,4 +1,4 @@
-import { supabase, SalesRow } from './supabase'
+import { supabase, SalesRow, MenuRow } from './supabase'
 
 export async function fetchRange(from: string, to: string): Promise<SalesRow[]> {
   const { data, error } = await supabase
@@ -56,4 +56,47 @@ export function calcMetrics(rows: SalesRow[]) {
 
 export function fmt$(n: number) {
   return '$' + Math.round(n).toLocaleString('en-US')
+}
+
+export async function fetchWasteRange(from: string, to: string): Promise<MenuRow[]> {
+  const { data, error } = await supabase
+    .from('menu')
+    .select('*')
+    .gte('business_date', from)
+    .lte('business_date', to)
+    .order('business_date', { ascending: true })
+  if (error) throw error
+  return data as MenuRow[]
+}
+
+export function calcWaste(rows: MenuRow[]) {
+  const totalWasteQty   = rows.reduce((s, r) => s + (r.quantity || 0), 0)
+  const totalQty        = rows.reduce((s, r) => s + (r.total_quantity || 0), 0)
+  const totalWasteValue = rows.reduce((s, r) => s + (r.total_retail_value || 0), 0)
+  const totalWasteCogs  = rows.reduce((s, r) => s + (r.total_item_cogs || 0), 0)
+  const wastePct        = totalQty > 0 ? (totalWasteQty / totalQty) * 100 : 0
+
+  // Aggregate by item name across multiple dates
+  const byItem: Record<string, { name: string; qty: number; value: number; cogs: number; totalQty: number }> = {}
+  rows.forEach(r => {
+    const key = r.mi_master_id
+    if (!byItem[key]) byItem[key] = { name: r.mi_name, qty: 0, value: 0, cogs: 0, totalQty: 0 }
+    byItem[key].qty      += r.quantity || 0
+    byItem[key].value    += r.total_retail_value || 0
+    byItem[key].cogs     += r.total_item_cogs || 0
+    byItem[key].totalQty += r.total_quantity || 0
+  })
+
+  const topItems = Object.values(byItem)
+    .map(item => ({
+      name:    item.name,
+      qty:     item.qty,
+      value:   item.value,
+      cogs:    item.cogs,
+      pct:     item.totalQty > 0 ? (item.qty / item.totalQty) * 100 : 0,
+    }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 8)
+
+  return { wastePct, totalWasteQty, totalWasteValue, totalWasteCogs, topItems }
 }
