@@ -101,11 +101,11 @@ export function calcWaste(rows: MenuRow[], netSales: number) {
   // Waste % = total waste retail value / net sales
   const wastePct        = netSales > 0 ? (totalWasteValue / netSales) * 100 : 0
 
-  // Aggregate by item name across multiple dates
+  // Aggregate by item — use mi_master_id if present, fall back to mi_name
   const byItem: Record<string, { name: string; qty: number; value: number; cogs: number; totalQty: number }> = {}
   rows.forEach(r => {
-    const key = r.mi_master_id
-    if (!byItem[key]) byItem[key] = { name: r.mi_name, qty: 0, value: 0, cogs: 0, totalQty: 0 }
+    const key = (r.mi_master_id && r.mi_master_id.trim()) ? r.mi_master_id.trim() : (r.mi_name || 'Unknown').trim()
+    if (!byItem[key]) byItem[key] = { name: r.mi_name || key, qty: 0, value: 0, cogs: 0, totalQty: 0 }
     byItem[key].qty      += r.quantity || 0
     byItem[key].value    += r.total_retail_value || 0
     byItem[key].cogs     += r.total_item_cogs || 0
