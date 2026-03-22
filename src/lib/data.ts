@@ -120,8 +120,8 @@ export function calcWaste(rows: MenuRow[]) {
       cogs:    item.cogs,
       pct:     item.totalQty > 0 ? (item.qty / item.totalQty) * 100 : 0,
     }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 8)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10)
 
   return { wastePct, totalWasteQty, totalWasteValue, totalWasteCogs, topItems }
 }

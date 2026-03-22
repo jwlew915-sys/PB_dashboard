@@ -601,7 +601,7 @@ export default function Dashboard() {
               borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '22px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-                <p style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--navy)' }}>Top Waste Items</p>
+                <p style={{ fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: 700, color: 'var(--navy)' }}>Top 10 Waste Items by Value</p>
                 {wasteData && (
                   <span style={{
                     fontFamily: 'var(--font-body)', fontSize: '11px', fontWeight: 700,
