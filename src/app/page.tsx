@@ -210,6 +210,9 @@ export default function Dashboard() {
   const [allMenu, setAllMenu]   = useState<MenuRow[]>([])
   const [loading, setLoading]   = useState(true)
 
+  // Normalize a raw date value from Supabase to YYYY-MM-DD
+  const norm = (d: string) => String(d).slice(0, 10)
+
   const today = new Date().toISOString().slice(0, 10)
   const [dailyDate, setDailyDate] = useState(today)
   const [weekDate,  setWeekDate]  = useState(today)
@@ -232,34 +235,34 @@ export default function Dashboard() {
   }, [])
 
   // ── DAILY ──
-  const dailyRow      = useMemo(() => allData.find(r => r.business_date === dailyDate),  [allData, dailyDate])
-  const dailyMenuRows = useMemo(() => allMenu.filter(r => r.business_date === dailyDate), [allMenu, dailyDate])
+  const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),  [allData, dailyDate])
+  const dailyMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) === dailyDate), [allMenu, dailyDate])
 
   // ── WEEKLY ──
-  const weekFrom    = startOfWeek(new Date(weekDate + 'T00:00:00'))
-  const weekTo      = endOfWeek(new Date(weekDate + 'T00:00:00'))
-  const weekRows    = useMemo(() => allData.filter(r => r.business_date >= weekFrom && r.business_date <= weekTo), [allData, weekFrom, weekTo])
-  const weekMenuRows = useMemo(() => allMenu.filter(r => r.business_date >= weekFrom && r.business_date <= weekTo), [allMenu, weekFrom, weekTo])
-  const weekNet     = weekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
-  const weekOrders  = weekRows.reduce((s, r) => s + (r.order_count   || 0), 0)
+  const weekFrom     = startOfWeek(new Date(weekDate + 'T00:00:00'))
+  const weekTo       = endOfWeek(new Date(weekDate + 'T00:00:00'))
+  const weekRows     = useMemo(() => allData.filter(r => norm(r.business_date) >= weekFrom && norm(r.business_date) <= weekTo), [allData, weekFrom, weekTo])
+  const weekMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) >= weekFrom && norm(r.business_date) <= weekTo), [allMenu, weekFrom, weekTo])
+  const weekNet      = weekRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
+  const weekOrders   = weekRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   // ── MONTHLY ──
-  const monthRows     = useMemo(() => allData.filter(r => r.business_date.startsWith(month)), [allData, month])
-  const monthMenuRows = useMemo(() => allMenu.filter(r => r.business_date.startsWith(month)), [allMenu, month])
+  const monthRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(month)), [allData, month])
+  const monthMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(month)), [allMenu, month])
   const monthNet      = monthRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
   const monthOrders   = monthRows.reduce((s, r) => s + (r.order_count   || 0), 0)
   const monthAvgDaily = monthRows.length ? monthNet / monthRows.length : 0
 
   // ── YTD ──
-  const ytdRows     = useMemo(() => allData.filter(r => r.business_date.startsWith(year)), [allData, year])
-  const ytdMenuRows = useMemo(() => allMenu.filter(r => r.business_date.startsWith(year)), [allMenu, year])
+  const ytdRows     = useMemo(() => allData.filter(r => norm(r.business_date).startsWith(year)), [allData, year])
+  const ytdMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date).startsWith(year)), [allMenu, year])
   const ytdNet      = ytdRows.reduce((s, r) => s + (r['netsales_$'] || 0), 0)
   const ytdOrders   = ytdRows.reduce((s, r) => s + (r.order_count   || 0), 0)
 
   const ytdByMonth = useMemo(() => {
     const map: Record<string, number> = {}
     ytdRows.forEach(r => {
-      const mo = r.business_date.slice(0, 7)
+      const mo = norm(r.business_date).slice(0, 7)
       map[mo] = (map[mo] || 0) + (r['netsales_$'] || 0)
     })
     return Object.entries(map).sort().map(([mo, net]) => ({ month: mo.slice(5), net: Math.round(net) }))
@@ -268,8 +271,8 @@ export default function Dashboard() {
   // ── YoY ──
   const [cmpY, cmpM, cmpD] = cmpDate.split('-')
   const prevDate = `${parseInt(cmpY) - 1}-${cmpM}-${cmpD}`
-  const cmpRowA  = useMemo(() => allData.find(r => r.business_date === cmpDate),  [allData, cmpDate])
-  const cmpRowB  = useMemo(() => allData.find(r => r.business_date === prevDate), [allData, prevDate])
+  const cmpRowA  = useMemo(() => allData.find(r => norm(r.business_date) === cmpDate),  [allData, cmpDate])
+  const cmpRowB  = useMemo(() => allData.find(r => norm(r.business_date) === prevDate), [allData, prevDate])
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'daily',   label: 'Daily'   },

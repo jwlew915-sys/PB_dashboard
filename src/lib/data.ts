@@ -65,9 +65,12 @@ export function fmt$(n: number) {
 export function groupSalesByDate(rows: SalesRow[]): SalesRow[] {
   const map: Record<string, { net: number; orders: number; id: number }> = {}
   rows.forEach(r => {
-    if (!map[r.business_date]) map[r.business_date] = { net: 0, orders: 0, id: r.id }
-    map[r.business_date].net    += r['netsales_$'] || 0
-    map[r.business_date].orders += r.order_count   || 0
+    // Normalize to YYYY-MM-DD regardless of whether Supabase returns a date
+    // string, timestamp, or ISO string with timezone
+    const date = String(r.business_date).slice(0, 10)
+    if (!map[date]) map[date] = { net: 0, orders: 0, id: r.id }
+    map[date].net    += r['netsales_$'] || 0
+    map[date].orders += r.order_count   || 0
   })
   return Object.entries(map)
     .sort(([a], [b]) => a.localeCompare(b))
