@@ -54,74 +54,20 @@ export function calcMetrics(rows: SalesRow[]) {
   return { totalSales, totalOrders, avgDaily, avgOrder, bestDay, days: rows.length }
 }
 
+export function calcWaste(rows: MenuRow[], netSales: number) {
+  const totalWasteQty   = rows.reduce((s, r) => s + (r.waste_count  || 0), 0)
+  const totalWasteValue = rows.reduce((s, r) => s + (r.waste_amount || 0), 0)
+  const wastePct = netSales > 0 ? (totalWasteValue / netSales) * 100 : 0
+  return { totalWasteQty, totalWasteValue, wastePct }
+}
+
+export function groupSalesByDate(rows: SalesRow[]) {
+  return rows.reduce((acc, r) => {
+    acc[r.business_date] = r
+    return acc
+  }, {} as Record<string, SalesRow>)
+}
+
 export function fmt$(n: number) {
   return '$' + Math.round(n).toLocaleString('en-US')
-}
-
-/**
- * Collapses multiple rows for the same business_date into one aggregated row.
- * Necessary because the sales table may have multiple entries per day.
- */
-export function groupSalesByDate(rows: SalesRow[]): SalesRow[] {
-  const map: Record<string, { net: number; orders: number; id: number }> = {}
-  rows.forEach(r => {
-    // Normalize to YYYY-MM-DD regardless of whether Supabase returns a date
-    // string, timestamp, or ISO string with timezone
-    const date = String(r.business_date).slice(0, 10)
-    if (!map[date]) map[date] = { net: 0, orders: 0, id: r.id }
-    map[date].net    += r['netsales_$'] || 0
-    map[date].orders += r.order_count   || 0
-  })
-  return Object.entries(map)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, agg]) => ({
-      id:             agg.id,
-      business_date:  date,
-      'netsales_$':   agg.net,
-      order_count:    agg.orders,
-      avg_order:      agg.orders > 0 ? agg.net / agg.orders : null,
-    }))
-}
-
-export async function fetchWasteRange(from: string, to: string): Promise<MenuRow[]> {
-  const { data, error } = await supabase
-    .from('menu')
-    .select('*')
-    .gte('business_date', from)
-    .lte('business_date', to)
-    .order('business_date', { ascending: true })
-  if (error) throw error
-  return data as MenuRow[]
-}
-
-export function calcWaste(rows: MenuRow[], netSales: number) {
-  const totalWasteQty   = rows.reduce((s, r) => s + (r.quantity || 0), 0)
-  const totalWasteValue = rows.reduce((s, r) => s + (r.total_retail_value || 0), 0)
-  const totalWasteCogs  = rows.reduce((s, r) => s + (r.total_item_cogs || 0), 0)
-  // Waste % = total waste retail value / net sales
-  const wastePct        = netSales > 0 ? (totalWasteValue / netSales) * 100 : 0
-
-  // Aggregate by item — use mi_master_id if present, fall back to mi_name
-  const byItem: Record<string, { name: string; qty: number; value: number; cogs: number; totalQty: number }> = {}
-  rows.forEach(r => {
-    const key = (r.mi_master_id && r.mi_master_id.trim()) ? r.mi_master_id.trim() : (r.mi_name || 'Unknown').trim()
-    if (!byItem[key]) byItem[key] = { name: r.mi_name || key, qty: 0, value: 0, cogs: 0, totalQty: 0 }
-    byItem[key].qty      += r.quantity || 0
-    byItem[key].value    += r.total_retail_value || 0
-    byItem[key].cogs     += r.total_item_cogs || 0
-    byItem[key].totalQty += r.total_quantity || 0
-  })
-
-  const topItems = Object.values(byItem)
-    .map(item => ({
-      name:    item.name,
-      qty:     item.qty,
-      value:   item.value,
-      cogs:    item.cogs,
-      pct:     item.totalQty > 0 ? (item.qty / item.totalQty) * 100 : 0,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10)
-
-  return { wastePct, totalWasteQty, totalWasteValue, totalWasteCogs, topItems }
 }
