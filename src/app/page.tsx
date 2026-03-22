@@ -202,9 +202,13 @@ export default function Dashboard() {
   }, [])
 
   // ── DAILY ──
-  const yesterday     = shiftDays(dailyDate, -1)
-  const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),  [allData, dailyDate])
-  const prevDayRow    = useMemo(() => allData.find(r => norm(r.business_date) === yesterday),  [allData, yesterday])
+  const sameDayPriorYear = useMemo(() => {
+    const d = new Date(dailyDate + 'T00:00:00')
+    d.setFullYear(d.getFullYear() - 1)
+    return d.toISOString().slice(0, 10)
+  }, [dailyDate])
+  const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),        [allData, dailyDate])
+  const prevDayRow    = useMemo(() => allData.find(r => norm(r.business_date) === sameDayPriorYear), [allData, sameDayPriorYear])
   const dailyMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) === dailyDate), [allMenu, dailyDate])
   const last14        = useMemo(() => {
     const start = shiftDays(dailyDate, -13)
@@ -300,8 +304,8 @@ export default function Dashboard() {
   type KpiConfig = { label: string; value: string; sub: string; trend: number | null; highlight?: boolean }
 
   const kpis: KpiConfig[] = tab === 'daily' ? [
-    { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: 'vs yesterday', trend: trendPct(dailyRow?.['netsales_$'] ?? 0, prevDayRow?.['netsales_$'] ?? 0), highlight: true },
-    { label: 'Orders', value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: 'vs yesterday', trend: trendPct(dailyRow?.order_count ?? 0, prevDayRow?.order_count ?? 0) },
+    { label: 'Net Sales', value: dailyRow ? fmt(dailyRow['netsales_$']) : '—', sub: `vs ${sameDayPriorYear}`, trend: trendPct(dailyRow?.['netsales_$'] ?? 0, prevDayRow?.['netsales_$'] ?? 0), highlight: true },
+    { label: 'Orders', value: dailyRow ? dailyRow.order_count.toLocaleString() : '—', sub: `vs ${sameDayPriorYear}`, trend: trendPct(dailyRow?.order_count ?? 0, prevDayRow?.order_count ?? 0) },
     { label: 'Avg Order', value: dailyRow?.avg_order ? fmt(dailyRow.avg_order) : '—', sub: 'per transaction', trend: null },
     { label: 'Waste %', value: dailyMenuRows.length ? calcWaste(dailyMenuRows).wastePct.toFixed(1) + '%' : '—', sub: 'of total inventory', trend: null },
   ] : tab === 'weekly' ? [
