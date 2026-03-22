@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { supabase, SalesRow, MenuRow } from '@/lib/supabase'
-import { calcWaste, groupSalesByDate } from '@/lib/data'
+import { calcWaste } from '@/lib/data'
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -201,7 +201,7 @@ export default function Dashboard() {
         supabase.from('sales').select('*').order('business_date', { ascending: true }),
         supabase.from('menu').select('*').order('business_date', { ascending: true }),
       ])
-      setAllData(groupSalesByDate((salesRes.data as SalesRow[]) || []))
+      setAllData((salesRes.data as SalesRow[]) || [])
       setAllMenu((menuRes.data as MenuRow[]) || [])
       setLoading(false)
     }
@@ -341,7 +341,7 @@ export default function Dashboard() {
 
   const activeMenuRows = tab === 'daily' ? dailyMenuRows : tab === 'weekly' ? weekMenuRows : tab === 'monthly' ? monthMenuRows : ytdMenuRows
   const activeNetSales = tab === 'daily' ? (dailyRow?.['netsales_$'] ?? 0) : tab === 'weekly' ? weekNet : tab === 'monthly' ? monthNet : ytdNet
-  const wasteData = activeMenuRows.length ? calcWaste(activeMenuRows, activeNetSales) : null
+  const wasteData = activeMenuRows.length ? { ...calcWaste(activeMenuRows, activeNetSales), totalWasteCogs: 0, topItems: activeMenuRows.filter(r => r.waste_amount && r.waste_amount > 0).sort((a,b) => (b.waste_amount||0) - (a.waste_amount||0)).slice(0,10).map(r => ({ name: r.item_name, qty: r.waste_count||0, value: r.waste_amount||0, cogs: 0, pct: r.waste_count && r.qty_sold ? r.waste_count/(r.waste_count+(r.qty_sold||0))*100 : 0 })) } : null
 
   // Chart data
   const mainChartData = tab === 'daily'
