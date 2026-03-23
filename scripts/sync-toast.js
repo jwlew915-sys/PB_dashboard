@@ -55,13 +55,13 @@ function aggregateData(orders, date) {
       const utcHour = parseInt(o.openedDate.substring(11,13))
       hour = ((utcHour - 5) + 24) % 24
     }
-    for (const c of (o.checks||[])) {
-      if (c.voided||c.deleted) continue
-      const amt = c.amount||0
-const discounts = (c.appliedDiscounts||[]).reduce((s,d) => s+(d.discountAmount||0), 0)
-const netAmt = amt - discounts
-totalNet += netAmt
-      totalCount++
+        for (const c of (o.checks||[])) {
+  if (c.voided||c.deleted) continue
+  const amt = c.amount||0
+  const discounts = (c.appliedDiscounts||[]).reduce((s,d) => s+(d.discountAmount||0), 0)
+  const netAmt = amt - discounts
+  totalNet += netAmt
+  totalCount++
       if (hour !== null) {
         if (!hourly[hour]) hourly[hour] = {net_sales:0,order_count:0}
         hourly[hour].net_sales += netAmt
