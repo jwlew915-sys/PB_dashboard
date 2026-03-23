@@ -64,7 +64,7 @@ totalNet += netAmt
       totalCount++
       if (hour !== null) {
         if (!hourly[hour]) hourly[hour] = {net_sales:0,order_count:0}
-        hourly[hour].net_sales += amt
+        hourly[hour].net_sales += netAmt
         hourly[hour].order_count++
       }
       for (const sel of (c.selections||[])) {
