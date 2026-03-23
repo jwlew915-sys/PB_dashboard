@@ -58,7 +58,9 @@ function aggregateData(orders, date) {
     for (const c of (o.checks||[])) {
       if (c.voided||c.deleted) continue
       const amt = c.amount||0
-      totalNet += amt
+const discounts = (c.appliedDiscounts||[]).reduce((s,d) => s+(d.discountAmount||0), 0)
+const netAmt = amt - discounts
+totalNet += netAmt
       totalCount++
       if (hour !== null) {
         if (!hourly[hour]) hourly[hour] = {net_sales:0,order_count:0}
