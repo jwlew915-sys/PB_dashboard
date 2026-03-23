@@ -13,6 +13,14 @@ export type SalesRow = {
   avg_order: number | null
 }
 
+export type HourlyRow = {
+  id: number
+  business_date: string
+  hour: number
+  net_sales: number
+  order_count: number
+}
+
 export type MenuRow = {
   id: number
   business_date: string

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { supabase, SalesRow, MenuRow } from '@/lib/supabase'
+import { supabase, SalesRow, MenuRow, HourlyRow } from '@/lib/supabase'
 import { calcWaste } from '@/lib/data'
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -208,16 +208,33 @@ export default function Dashboard() {
     load()
   }, [])
 
+  // ── HOURLY (fetched on demand per selected date) ──
+  const [hourlyRows, setHourlyRows] = useState<HourlyRow[]>([])
+  useEffect(() => {
+    supabase
+      .from('hourly_sales')
+      .select('*')
+      .eq('business_date', dailyDate)
+      .order('hour', { ascending: true })
+      .then(({ data }) => setHourlyRows((data as HourlyRow[]) || []))
+  }, [dailyDate])
+
+  const hourlyChartData = useMemo(() => {
+    const map: Record<number, { net_sales: number; order_count: number }> = {}
+    hourlyRows.forEach(r => { map[r.hour] = { net_sales: r.net_sales, order_count: r.order_count } })
+    return Array.from({ length: 24 }, (_, h) => ({
+      hour: h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`,
+      sales: map[h]?.net_sales ?? 0,
+      orders: map[h]?.order_count ?? 0,
+    }))
+  }, [hourlyRows])
+
   // ── DAILY ──
   // 52 weeks back = exact same day of week, same time of year, prior year
   const sameDayPriorYear = useMemo(() => shiftDays(dailyDate, -364), [dailyDate])
   const dailyRow      = useMemo(() => allData.find(r => norm(r.business_date) === dailyDate),        [allData, dailyDate])
   const prevDayRow    = useMemo(() => allData.find(r => norm(r.business_date) === sameDayPriorYear), [allData, sameDayPriorYear])
   const dailyMenuRows = useMemo(() => allMenu.filter(r => norm(r.business_date) === dailyDate), [allMenu, dailyDate])
-  const last14        = useMemo(() => {
-    const start = shiftDays(dailyDate, -13)
-    return allData.filter(r => norm(r.business_date) >= start && norm(r.business_date) <= dailyDate)
-  }, [allData, dailyDate])
 
   // ── WEEKLY ──
   const weekFrom     = startOfWeek(new Date(weekDate + 'T00:00:00'))
@@ -344,9 +361,7 @@ export default function Dashboard() {
   const wasteData = activeMenuRows.length ? { ...calcWaste(activeMenuRows, activeNetSales), totalWasteCogs: 0, topItems: activeMenuRows.filter(r => r.waste_amount && r.waste_amount > 0).sort((a,b) => (b.waste_amount||0) - (a.waste_amount||0)).slice(0,10).map(r => ({ name: r.item_name, qty: r.waste_count||0, value: r.waste_amount||0, cogs: 0, pct: r.waste_count && r.qty_sold ? r.waste_count/(r.waste_count+(r.qty_sold||0))*100 : 0 })) } : null
 
   // Chart data
-  const mainChartData = tab === 'daily'
-    ? last14.map(r => ({ date: norm(r.business_date).slice(5), sales: r['netsales_$'], orders: r.order_count }))
-    : tab === 'weekly'
+  const mainChartData = tab === 'weekly'
     ? weekRows.map(r => ({ date: norm(r.business_date).slice(5), sales: r['netsales_$'], orders: r.order_count }))
     : tab === 'monthly'
     ? monthRows.map(r => ({ date: norm(r.business_date).slice(8), sales: r['netsales_$'], orders: r.order_count }))
@@ -529,10 +544,10 @@ export default function Dashboard() {
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
                   <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-label)', marginBottom: 4 }}>
-                    {tab === 'ytd' ? 'Monthly Net Sales' : tab === 'daily' ? 'Last 14 Days' : 'Net Sales Trend'}
+                    {tab === 'ytd' ? 'Monthly Net Sales' : tab === 'daily' ? `Hourly Sales — ${dailyDate}` : 'Net Sales Trend'}
                   </p>
                   <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '28px', color: 'var(--navy)', lineHeight: 1 }}>
-                    {tab === 'daily' ? fmt(last14.reduce((s, r) => s + r['netsales_$'], 0)) :
+                    {tab === 'daily' ? fmt(dailyRow?.['netsales_$'] ?? 0) :
                      tab === 'weekly' ? fmt(weekNet) :
                      tab === 'monthly' ? fmt(monthNet) :
                      tab === 'ytd' ? fmt(ytdNet) :
@@ -542,19 +557,29 @@ export default function Dashboard() {
                 <p style={{ fontFamily: 'var(--font-body)', fontSize: '11px', color: 'var(--text-muted)' }}>{periodLabel}</p>
               </div>
               <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={mainChartData}>
-                  <defs>
-                    <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={C.blue} stopOpacity={0.15} />
-                      <stop offset="95%" stopColor={C.blue} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
-                  <XAxis dataKey="date" {...axisProps} />
-                  <YAxis tickFormatter={fmtK} {...axisProps} />
-                  <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
-                  <Area type="monotone" dataKey="sales" stroke={C.blue} strokeWidth={2.5} fill="url(#salesGrad)" dot={false} name="Net Sales" />
-                </AreaChart>
+                {tab === 'daily' ? (
+                  <BarChart data={hourlyChartData} barCategoryGap="25%">
+                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
+                    <XAxis dataKey="hour" {...axisProps} interval={1} />
+                    <YAxis tickFormatter={fmtK} {...axisProps} />
+                    <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
+                    <Bar dataKey="sales" fill={C.blue} radius={[3, 3, 0, 0]} name="Net Sales" />
+                  </BarChart>
+                ) : (
+                  <AreaChart data={mainChartData}>
+                    <defs>
+                      <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={C.blue} stopOpacity={0.15} />
+                        <stop offset="95%" stopColor={C.blue} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 6" stroke={C.grid} vertical={false} />
+                    <XAxis dataKey="date" {...axisProps} />
+                    <YAxis tickFormatter={fmtK} {...axisProps} />
+                    <Tooltip formatter={(v: number) => [fmt(v), 'Net Sales']} />
+                    <Area type="monotone" dataKey="sales" stroke={C.blue} strokeWidth={2.5} fill="url(#salesGrad)" dot={false} name="Net Sales" />
+                  </AreaChart>
+                )}
               </ResponsiveContainer>
             </div>
 
