@@ -133,24 +133,27 @@ function parseCSV(filePath, business_date) {
         waste_amount: parseNum(cols[11]),
       })
     } else {
+      // Header-based mapping — works regardless of column count or order
+      const h = headers
+      const gi = k => { const i = h.indexOf(k); return i >= 0 ? parseNum(cols[i]) : null }
       rows.push({
         business_date: rowDate, item_name: itemName,
-        sales_category: cols[1]||null,
-        qty_sold: parseNum(cols[2]),
-        item_cogs: parseNum(cols[3]),
-        gross_sales: parseNum(cols[4]),
-        discount_amount: parseNum(cols[5]),
-        refund_amount: parseNum(cols[6]),
-        net_sales: parseNum(cols[7]),
-        gross_profit: parseNum(cols[9]),
-        gross_margin_pct: parseNum(cols[10]),
-        tax: parseNum(cols[11]),
-        waste_count: parseNum(cols[12]),
-        waste_amount: parseNum(cols[13]),
-        voided_gross_sales: parseNum(cols[14]),
-        voided_qty_sold: parseNum(cols[15]),
-        item_qty_incl_voids: parseNum(cols[16]),
-        gross_amount_incl_voids: parseNum(cols[17]),
+        sales_category: cols[h.indexOf('sales category')] || null,
+        qty_sold:        gi('qty sold'),
+        gross_sales:     gi('gross sales'),
+        net_sales:       gi('net sales'),
+        waste_count:     gi('waste count'),
+        waste_amount:    gi('waste amount'),
+        item_cogs:       gi('item cogs'),
+        discount_amount: gi('discount amount'),
+        refund_amount:   gi('refund amount'),
+        gross_profit:    gi('gross profit'),
+        gross_margin_pct:gi('gross margin (%)'),
+        tax:             gi('tax'),
+        voided_gross_sales:     gi('voided gross sales'),
+        voided_qty_sold:        gi('voided qty sold'),
+        item_qty_incl_voids:    gi('item qty incl. voids'),
+        gross_amount_incl_voids:gi('gross amount incl. voids'),
       })
     }
   }
