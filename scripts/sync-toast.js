@@ -46,20 +46,25 @@ async function fetchAllOrders(token, date) {
 function aggregateData(orders, date) {
   let totalNet=0, totalCount=0
   const hourly = {}
-  const items = {}
-  const waste = {}
+  const items = {}     // item_name -> {quantity, net_sales}
+  const waste = {}     // item_name -> {waste_count, waste_amount}
 
   for (const o of orders) {
     if (o.deleted) continue
 
+    // Excess-food / waste-tracking orders: NOT voided, NOT regular guest sales.
+    // Toast creates one of these per day per restaurant when waste is logged in the POS.
+    // Each selection is discounted 100% by a "Waste" discount; preDiscountPrice retains
+    // the pre-discount (i.e. real) value of the wasted item.
     if (o.excessFood) {
       for (const c of (o.checks||[])) {
         if (c.deleted) continue
         for (const sel of (c.selections||[])) {
           const name = sel.displayName || 'Unknown'
           const qty = sel.quantity || 1
-          const preDiscount = (sel.preDiscountPrice != null ? sel.preDiscountPrice : (sel.price || 0))
-          const amt = preDiscount * qty
+          // preDiscountPrice is the gross sale price for the whole selection line
+          // (already accounts for quantity) -- do NOT multiply by qty again.
+          const amt = (sel.preDiscountPrice != null ? sel.preDiscountPrice : (sel.price || 0) * qty)
           if (!waste[name]) waste[name] = { waste_count: 0, waste_amount: 0 }
           waste[name].waste_count += qty
           waste[name].waste_amount += amt
@@ -119,6 +124,8 @@ function aggregateData(orders, date) {
     net_sales: Math.round(v.net_sales*100)/100
   }))
 
+  // menu table rows: merge item sales + waste by item_name so the waste dashboard
+  // (which reads from `menu`) gets fed automatically, no manual Product Mix export needed.
   const allItemNames = new Set([...Object.keys(items), ...Object.keys(waste)])
   const menuRows = [...allItemNames].map(name => {
     const s = items[name] || { quantity: 0, net_sales: 0 }
