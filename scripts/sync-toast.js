@@ -143,12 +143,13 @@ function aggregateData(orders, date) {
   return { dailyRow, hourlyRows, itemRows, menuRows }
 }
 
-async function upsertSupabase(table, rows) {
+async function upsertSupabase(table, rows, conflictCols) {
   if (!rows.length) { console.log('No rows for '+table); return }
   console.log('Upserting '+rows.length+' rows into '+table+'...')
+  const path = '/rest/v1/'+table+(conflictCols ? '?on_conflict='+conflictCols : '')
   const r = await req({
     hostname: new URL(SB_URL).hostname,
-    path: '/rest/v1/'+table,
+    path,
     method: 'POST',
     headers: {
       'apikey': SB_KEY,
@@ -180,10 +181,10 @@ async function main() {
     console.log('  Hourly: '+hourlyRows.length+' hours')
     console.log('  Items: '+itemRows.length+' unique items')
     console.log('  Waste: '+totalWasteQty+' units / $'+totalWasteAmt.toFixed(2)+' across '+menuRows.filter(r=>r.waste_count>0).length+' items')
-    await upsertSupabase('sales', [dailyRow])
-    await upsertSupabase('hourly_sales', hourlyRows)
-    await upsertSupabase('item_sales', itemRows)
-    await upsertSupabase('menu', menuRows)
+    await upsertSupabase('sales', [dailyRow], 'business_date')
+    await upsertSupabase('hourly_sales', hourlyRows, 'business_date,hour')
+    await upsertSupabase('item_sales', itemRows, 'business_date,item_name')
+    await upsertSupabase('menu', menuRows, 'business_date,item_name')
     console.log('\nSync complete!')
   } catch(e) {
     console.error('Sync failed:', e.message)
