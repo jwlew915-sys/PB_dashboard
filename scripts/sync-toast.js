@@ -47,27 +47,47 @@ function aggregateData(orders, date) {
   let totalNet=0, totalCount=0
   const hourly = {}
   const items = {}
+  const waste = {}
 
   for (const o of orders) {
-    if (o.voided||o.deleted) continue
+    if (o.deleted) continue
+
+    if (o.excessFood) {
+      for (const c of (o.checks||[])) {
+        if (c.deleted) continue
+        for (const sel of (c.selections||[])) {
+          const name = sel.displayName || 'Unknown'
+          const qty = sel.quantity || 1
+          const preDiscount = (sel.preDiscountPrice != null ? sel.preDiscountPrice : (sel.price || 0))
+          const amt = preDiscount * qty
+          if (!waste[name]) waste[name] = { waste_count: 0, waste_amount: 0 }
+          waste[name].waste_count += qty
+          waste[name].waste_amount += amt
+        }
+      }
+      continue
+    }
+
+    if (o.voided) continue
     let hour = null
     if (o.openedDate) {
       const utcHour = parseInt(o.openedDate.substring(11,13))
       hour = ((utcHour - 5) + 24) % 24
     }
-        for (const c of (o.checks||[])) {
-  if (c.voided||c.deleted) continue
-  const amt = c.amount||0
-  const discounts = (c.appliedDiscounts||[]).reduce((s,d) => s+(d.discountAmount||0), 0)
-  const netAmt = amt - discounts
-  totalNet += netAmt
-  totalCount++
+    for (const c of (o.checks||[])) {
+      if (c.voided||c.deleted) continue
+      const amt = c.amount||0
+      const discounts = (c.appliedDiscounts||[]).reduce((s,d) => s+(d.discountAmount||0), 0)
+      const netAmt = amt - discounts
+      totalNet += netAmt
+      totalCount++
       if (hour !== null) {
         if (!hourly[hour]) hourly[hour] = {net_sales:0,order_count:0}
         hourly[hour].net_sales += netAmt
         hourly[hour].order_count++
       }
       for (const sel of (c.selections||[])) {
+        if (sel.voided) continue
         const name = sel.displayName||'Unknown'
         const qty = sel.quantity||1
         const price = (sel.price||0)*qty
@@ -99,7 +119,21 @@ function aggregateData(orders, date) {
     net_sales: Math.round(v.net_sales*100)/100
   }))
 
-  return { dailyRow, hourlyRows, itemRows }
+  const allItemNames = new Set([...Object.keys(items), ...Object.keys(waste)])
+  const menuRows = [...allItemNames].map(name => {
+    const s = items[name] || { quantity: 0, net_sales: 0 }
+    const w = waste[name] || { waste_count: 0, waste_amount: 0 }
+    return {
+      business_date: date,
+      item_name: name,
+      qty_sold: Math.round(s.quantity*100)/100,
+      net_sales: Math.round(s.net_sales*100)/100,
+      waste_count: Math.round(w.waste_count*100)/100,
+      waste_amount: Math.round(w.waste_amount*100)/100,
+    }
+  })
+
+  return { dailyRow, hourlyRows, itemRows, menuRows }
 }
 
 async function upsertSupabase(table, rows) {
@@ -121,7 +155,7 @@ async function upsertSupabase(table, rows) {
 }
 
 async function main() {
-  console.log('Paris Baguette FR-1554 - Full Nightly Sync v2')
+  console.log('Paris Baguette FR-1554 - Full Nightly Sync v3 (with waste)')
   console.log('='.repeat(50))
   const missing=['TOAST_CLIENT_ID','TOAST_CLIENT_SECRET','TOAST_RESTAURANT_GUID','SUPABASE_URL','SUPABASE_KEY'].filter(k=>!process.env[k])
   if (missing.length) { console.error('Missing secrets: '+missing.join(', ')); process.exit(1) }
@@ -131,14 +165,18 @@ async function main() {
   try {
     const token = await getToken()
     const orders = await fetchAllOrders(token, date)
-    const {dailyRow, hourlyRows, itemRows} = aggregateData(orders, date)
+    const {dailyRow, hourlyRows, itemRows, menuRows} = aggregateData(orders, date)
+    const totalWasteAmt = menuRows.reduce((s,r)=>s+(r.waste_amount||0),0)
+    const totalWasteQty = menuRows.reduce((s,r)=>s+(r.waste_count||0),0)
     console.log('\nResults:')
     console.log('  Daily: $'+dailyRow['netsales_$']+' | '+dailyRow.order_count+' orders | AOV $'+dailyRow.avg_order)
     console.log('  Hourly: '+hourlyRows.length+' hours')
     console.log('  Items: '+itemRows.length+' unique items')
+    console.log('  Waste: '+totalWasteQty+' units / $'+totalWasteAmt.toFixed(2)+' across '+menuRows.filter(r=>r.waste_count>0).length+' items')
     await upsertSupabase('sales', [dailyRow])
     await upsertSupabase('hourly_sales', hourlyRows)
     await upsertSupabase('item_sales', itemRows)
+    await upsertSupabase('menu', menuRows)
     console.log('\nSync complete!')
   } catch(e) {
     console.error('Sync failed:', e.message)
