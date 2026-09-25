@@ -13,6 +13,10 @@ type Tab = 'daily' | 'weekly' | 'monthly' | 'ytd' | 'compare'
 const fmt  = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
 const fmtK = (n: number) => n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : '$' + Math.round(n)
 const norm = (d: string) => String(d).slice(0, 10)
+const fmtDOW = (d: string) => {
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(norm(d) + 'T00:00:00').getDay()]
+  return `${dow}, ${norm(d)}`
+}
 
 function startOfWeek(date: Date) {
   const d = new Date(date)
@@ -318,8 +322,8 @@ export default function Dashboard() {
 
   // ── Per-tab derived values ─────────────────────────────────────────────────
   const periodLabel = {
-    daily: dailyDate, weekly: `${weekFrom} → ${weekTo}`,
-    monthly: month, ytd: year, compare: `${cmpDate} vs ${prevDate}`,
+    daily: fmtDOW(dailyDate), weekly: `${fmtDOW(weekFrom)} → ${fmtDOW(weekTo)}`,
+    monthly: month, ytd: year, compare: `${fmtDOW(cmpDate)} vs ${fmtDOW(prevDate)}`,
   }[tab]
 
   type KpiConfig = { label: string; value: string; sub: string; trend: number | null; highlight?: boolean }
@@ -544,7 +548,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
                   <p style={{ fontFamily: 'var(--font-body)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-label)', marginBottom: 4 }}>
-                    {tab === 'ytd' ? 'Monthly Net Sales' : tab === 'daily' ? `Hourly Sales — ${dailyDate}` : 'Net Sales Trend'}
+                    {tab === 'ytd' ? 'Monthly Net Sales' : tab === 'daily' ? `Hourly Sales — ${fmtDOW(dailyDate)}` : 'Net Sales Trend'}
                   </p>
                   <p style={{ fontFamily: 'var(--font-display), serif', fontSize: '28px', color: 'var(--navy)', lineHeight: 1 }}>
                     {tab === 'daily' ? fmt(dailyRow?.['netsales_$'] ?? 0) :
